@@ -2,11 +2,15 @@ import { useEffect, useRef, useState } from "react";
 import "./logistica.css";
 import { KEY, pathTypes } from "./constants.js";
 import { emptySlots, loadLayout } from "./data/layout.js";
-import { useHangarScene } from "./hooks/useHangarScene.js";
+import { DEFAULT_VIEW, useHangarScene } from "./hooks/useHangarScene.js";
 import TopBar from "./components/TopBar.jsx";
 import ScenePanel from "./components/ScenePanel.jsx";
-import SidePanel from "./components/SidePanel.jsx";
 import KanbanModal from "./components/KanbanModal.jsx";
+import KpiCards from "./components/KpiCards.jsx";
+import DetailCard from "./components/DetailCard.jsx";
+import ListCard from "./components/ListCard.jsx";
+import TrackCard from "./components/TrackCard.jsx";
+import InventoryDrawer from "./components/InventoryDrawer.jsx";
 
 export default function Logistica() {
   const canvas = useRef(null);
@@ -36,6 +40,18 @@ export default function Logistica() {
   const [inspectedKanban, setInspectedKanban] = useState(null);
   const [selectedSlotId, setSelectedSlotId] = useState(null);
   const [focusedSlotId, setFocusedSlotId] = useState(null);
+  const [inventoryOpen, setInventoryOpen] = useState(false);
+  const marksRef = useRef(new Set());
+  const term = query.trim().toLocaleLowerCase();
+  const searchResults = term
+    ? layout.kanbans.flatMap((k) =>
+        (k.slots || [])
+          .filter((s) => s.code && (s.code + " " + s.name).toLocaleLowerCase().includes(term))
+          .map((s) => ({ kanban: k, slot: s })),
+      )
+    : [];
+  // Pinos no 3D: kanban selecionado + kanbans com resultado da busca.
+  marksRef.current = new Set([selected, ...searchResults.map((r) => r.kanban.id)].filter((id) => layout.kanbans.some((k) => k.id === id)));
   const kanbanPositions = layout.kanbans.map(({ id, x, z, rotation }) => id + ":" + x + ":" + z + ":" + (rotation || 0)).join("|");
 
   useEffect(() => {
@@ -59,6 +75,7 @@ export default function Logistica() {
       focusRef,
       viewRef,
       viewOnlyRef,
+      marksRef,
     },
     setters: {
       setLayout,
@@ -244,7 +261,7 @@ export default function Logistica() {
   const closeKanban = () => {
     setInspectedKanban(null);
     setFocusedSlotId(null);
-    focusRef.current(0, 0, 68, 0.63);
+    focusRef.current(DEFAULT_VIEW.x, DEFAULT_VIEW.z, DEFAULT_VIEW.radius, DEFAULT_VIEW.angle);
   };
   const setPathWidth = (id, width) => {
     if (viewOnly) return;
@@ -315,55 +332,92 @@ export default function Logistica() {
     if (layerRefs.current[name]) layerRefs.current[name].visible = !value;
     setter(!value);
   };
+  const pickResult = (kanban, slot) => {
+    document.activeElement?.blur?.();
+    openKanban(kanban.id, slot.id);
+    setNotice(slot.code + " · " + kanban.id + " · caixa " + slot.id);
+  };
+  // Seleciona pela lista e leva a câmera até o item.
+  const pickFromList = (id) => {
+    setSelected(id);
+    const kanban = layout.kanbans.find((k) => k.id === id);
+    const shape = layout.areas.find((a) => a.id === id) || layout.paths.find((p) => p.id === id);
+    if (kanban) {
+      setSelectedSlotId(kanban.slots.find((s) => s.code)?.id || null);
+      focusRef.current(kanban.x, kanban.z, 24, 0.63);
+      setNotice(kanban.name + " · dois cliques na estante para aproximar");
+    } else if (shape?.points.length) {
+      const cx = shape.points.reduce((sum, p) => sum + p.x, 0) / shape.points.length;
+      const cz = shape.points.reduce((sum, p) => sum + p.z, 0) / shape.points.length;
+      focusRef.current(cx, cz, 30, 0.63);
+    }
+  };
   return (
     <div className={viewOnly ? "log-app log-view-only" : "log-app"}>
       <TopBar
+        query={query}
+        onQuery={setQuery}
+        searchResults={searchResults}
+        onPickResult={pickResult}
+        notice={notice}
         viewOnly={viewOnly}
         onToggleViewOnly={toggleViewOnly}
         showGrid={showGrid}
         showStructure={showStructure}
-        onZoom={(amount) => zoomRef.current(amount)}
         onToggleGrid={() => toggleLayer("grid", setShowGrid, showGrid)}
         onToggleStructure={() => toggleLayer("structure", setShowStructure, showStructure)}
         onAddKanban={addKanban}
+        onOpenInventory={() => setInventoryOpen(true)}
       />
-      <div className="log-body">
-        <ScenePanel
-          canvasRef={canvas}
-          viewOnly={viewOnly}
-          tool={tool}
-          pathType={pathType}
-          snapToGrid={snapToGrid}
-          draft={draft}
-          cursorWorld={cursorWorld}
-          cursorScreen={cursorScreen}
-          notice={notice}
-          onChooseTool={chooseTool}
-          onChoosePathType={choosePathType}
-          onToggleSnap={toggleSnap}
-          onFinish={finishDrawing}
-          onCancel={cancelDrawing}
-        />
-        <SidePanel
+      <ScenePanel
+        canvasRef={canvas}
+        viewOnly={viewOnly}
+        tool={tool}
+        pathType={pathType}
+        snapToGrid={snapToGrid}
+        draft={draft}
+        cursorWorld={cursorWorld}
+        cursorScreen={cursorScreen}
+        onChooseTool={chooseTool}
+        onChoosePathType={choosePathType}
+        onToggleSnap={toggleSnap}
+        onFinish={finishDrawing}
+        onCancel={cancelDrawing}
+        onZoom={(amount) => zoomRef.current(amount)}
+        onResetView={() => focusRef.current(DEFAULT_VIEW.x, DEFAULT_VIEW.z, DEFAULT_VIEW.radius, DEFAULT_VIEW.angle)}
+      />
+      <KpiCards layout={layout} />
+      <div className="log-cards">
+        <DetailCard
           layout={layout}
-          viewOnly={viewOnly}
           selected={selected}
-          query={query}
+          viewOnly={viewOnly}
           selectedSlotId={selectedSlotId}
-          onQuery={setQuery}
-          onAddItem={addItem}
-          onRemoveItem={removeItem}
+          onClose={() => setSelected(null)}
           onRenameKanban={renameKanban}
           onRotateKanban={rotateKanban}
-          onExportBackup={exportBackup}
-          onImportBackup={importBackup}
-          onSelect={setSelected}
           onOpenKanban={openKanban}
-          onNotice={setNotice}
           onPathWidth={setPathWidth}
           onRemove={removeSelected}
         />
+        <TrackCard layout={layout} selected={selected} selectedSlotId={selectedSlotId} onOpenKanban={openKanban} />
+        <ListCard layout={layout} selected={selected} onPick={pickFromList} />
       </div>
+      {inventoryOpen && (
+        <InventoryDrawer
+          layout={layout}
+          viewOnly={viewOnly}
+          onClose={() => setInventoryOpen(false)}
+          onAddItem={addItem}
+          onRemoveItem={removeItem}
+          onExportBackup={exportBackup}
+          onImportBackup={importBackup}
+          onOpenKanban={(id, slotId) => {
+            setInventoryOpen(false);
+            openKanban(id, slotId);
+          }}
+        />
+      )}
       {inspected && (
         <KanbanModal
           inspected={inspected}

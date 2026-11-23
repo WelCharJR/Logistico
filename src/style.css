@@ -1,3 +1,1 @@
-*{box-sizing:border-box}html,body,#root{min-width:320px;min-height:100%;margin:0}body{background:#10191d;font-family:Inter,system-ui,sans-serif}button,input,select{font:inherit}
-
-.standalone-hangar.logistica-project-page{padding:10px 14px 14px}.standalone-hangar .log-app{min-height:calc(100svh - 24px)}.standalone-hangar .log-body,.standalone-hangar .log-scene{min-height:calc(100svh - 96px)}@media(max-width:760px){.standalone-hangar.logistica-project-page{padding:0}.standalone-hangar .log-app{min-height:100svh}.standalone-hangar .log-scene{min-height:clamp(390px,58svh,560px);height:clamp(390px,58svh,560px)}}
+*{box-sizing:border-box}html,body,#root{min-width:320px;min-height:100%;margin:0}body{background:#e4ebf5;font-family:Inter,system-ui,sans-serif}button,input,select{font:inherit}

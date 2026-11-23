@@ -1,13 +1,18 @@
 import { useEffect, useRef } from "react";
 import * as THREE from "three";
 import { buildHall } from "../scene/buildHall.js";
-import { buildKanban } from "../scene/buildKanban.js";
+import { buildKanban, paintBins } from "../scene/buildKanban.js";
+import { buildProps } from "../scene/buildProps.js";
+import { createPins } from "../scene/buildPins.js";
+import { COLORS, disposeTree } from "../scene/theme.js";
 import { buildAreaMesh, buildPath } from "../scene/buildDrawn.js";
 import { createPreview } from "../scene/createPreview.js";
 import { createHoverFx } from "../scene/createHoverFx.js";
 
 // Cena Three.js do hangar: câmera, luzes, galpão, kanbans, áreas, caminhos e mouse.
 // Só é recriada quando muda a posição dos kanbans, as áreas ou os caminhos (mesmas dependências de antes).
+export const DEFAULT_VIEW = { x: 1, z: -7, radius: 52, angle: 0.63 };
+
 export function useHangarScene({
   canvas,
   layout,
@@ -17,7 +22,7 @@ export function useHangarScene({
   refs,
   setters,
 }) {
-  const { toolRef, draftRef, pathTypeRef, snapRef, layerRefs, clearPreviewRef, zoomRef, focusRef, viewRef, viewOnlyRef } =
+  const { toolRef, draftRef, pathTypeRef, snapRef, layerRefs, clearPreviewRef, zoomRef, focusRef, viewRef, viewOnlyRef, marksRef } =
     refs;
   const {
     setLayout,
@@ -32,40 +37,54 @@ export function useHangarScene({
   // Sempre o layout mais recente (a cena não é recriada ao adicionar ou editar itens).
   const layoutRef = useRef(layout);
   layoutRef.current = layout;
+  const slotGroupsRef = useRef([]);
+  // Recolore as caixas quando o conteúdo muda (cadastro, remoção, edição), sem recriar a cena.
+  const slotsKey = layout.kanbans.map((k) => k.id + ":" + k.slots.map((s) => (s.code ? 1 : 0)).join("")).join("|");
+  useEffect(() => {
+    paintBins(slotGroupsRef.current, layoutRef.current.kanbans);
+  }, [slotsKey]);
 
   useEffect(() => {
     const host = canvas.current;
     const scene = new THREE.Scene();
     const previewGroup = new THREE.Group();
     scene.add(previewGroup);
-    scene.background = new THREE.Color("#10191d");
-    const camera = new THREE.PerspectiveCamera(42, host.clientWidth / host.clientHeight, 0.1, 200);
-    camera.position.set(18, 22, 25);
-    camera.lookAt(0, 0, 0);
+    scene.background = new THREE.Color(COLORS.sky);
+    scene.fog = new THREE.Fog(COLORS.sky, 110, 230);
+    // Câmera com abertura pequena: perspectiva quase isométrica, como uma maquete.
+    const camera = new THREE.PerspectiveCamera(30, host.clientWidth / host.clientHeight, 0.5, 400);
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
     renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
     renderer.setSize(host.clientWidth, host.clientHeight);
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.05;
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFShadowMap;
     host.appendChild(renderer.domElement);
 
-    scene.add(new THREE.HemisphereLight(0xddeeff, 0x45433b, 1.65));
-    const sun = new THREE.DirectionalLight(0xfff4dd, 2.45);
-    sun.position.set(-16, 20, 12);
+    // Luz do céu + sol com sombra suave + luz de preenchimento sem sombra.
+    scene.add(new THREE.HemisphereLight(0xffffff, 0xc4cee0, 1.9));
+    const sun = new THREE.DirectionalLight(0xffffff, 2.6);
+    sun.position.set(-22, 38, 26);
     sun.castShadow = true;
+    sun.shadow.mapSize.set(4096, 4096);
+    Object.assign(sun.shadow.camera, { left: -48, right: 48, top: 40, bottom: -40, near: 1, far: 120 });
+    sun.shadow.bias = -0.0004;
+    sun.shadow.normalBias = 0.03;
+    sun.shadow.radius = 4;
     scene.add(sun);
+    const fill = new THREE.DirectionalLight(0xdfe7ff, 0.7);
+    fill.position.set(30, 18, -10);
+    scene.add(fill);
 
-    const floor = new THREE.Mesh(
-      new THREE.PlaneGeometry(60, 44),
-      new THREE.MeshStandardMaterial({ color: "#263437", roughness: 0.92 }),
-    );
-    floor.rotation.x = -Math.PI / 2;
-    floor.receiveShadow = true;
-    scene.add(floor);
     const gridLayer = new THREE.Group();
     scene.add(gridLayer);
-    const grid = new THREE.GridHelper(60, 60, "#d4a84e", "#536366");
-    grid.position.y = 0.015;
+    const grid = new THREE.GridHelper(60, 60, "#b6c3db", "#d9e0ec");
+    grid.scale.z = 44 / 60;
+    grid.position.y = 0.008;
+    grid.material.transparent = true;
+    grid.material.opacity = 0.7;
+    grid.material.depthWrite = false;
     gridLayer.add(grid);
     const structureLayer = new THREE.Group();
     structureLayer.visible = showStructure;
@@ -73,8 +92,14 @@ export function useHangarScene({
     gridLayer.visible = showGrid;
     layerRefs.current = { structure: structureLayer, grid: gridLayer };
     buildHall(scene, structureLayer);
+    const hasMatchMedia = typeof window.matchMedia === "function";
+    const media = (query) => hasMatchMedia && window.matchMedia(query).matches;
+    const reducedMotion = media("(prefers-reduced-motion: reduce)");
+    const props = buildProps(scene, { reducedMotion });
+    structureLayer.add(props.group); // enfeites somem junto com a estrutura
     const kanbanMeshes = new Map();
     const slotGroups = [];
+    slotGroupsRef.current = slotGroups;
     const drawnMeshes = [];
     layout.kanbans.forEach((k) => {
       const group = buildKanban(k);
@@ -93,16 +118,18 @@ export function useHangarScene({
       scene.add(group);
       drawnMeshes.push(group);
     });
+    // Telas em pé (celular) precisam de mais distância para caber o galpão.
+    const overview = (r) => (r === DEFAULT_VIEW.radius && host.clientWidth < host.clientHeight ? r * 1.6 : r);
     const controls = {
       down: false,
       lastX: 0,
       lastY: 0,
       angle: viewRef.current?.angle ?? 0.63,
       angleGoal: viewRef.current?.angle ?? 0.63,
-      radius: viewRef.current?.radius ?? 68,
-      radiusGoal: viewRef.current?.radius ?? 68,
-      target: new THREE.Vector3(viewRef.current?.x ?? 0, 0, viewRef.current?.z ?? 0),
-      targetGoal: new THREE.Vector3(viewRef.current?.x ?? 0, 0, viewRef.current?.z ?? 0),
+      radius: viewRef.current?.radius ?? overview(DEFAULT_VIEW.radius),
+      radiusGoal: viewRef.current?.radius ?? overview(DEFAULT_VIEW.radius),
+      target: new THREE.Vector3(viewRef.current?.x ?? DEFAULT_VIEW.x, 0, viewRef.current?.z ?? DEFAULT_VIEW.z),
+      targetGoal: new THREE.Vector3(viewRef.current?.x ?? DEFAULT_VIEW.x, 0, viewRef.current?.z ?? DEFAULT_VIEW.z),
       dragging: null,
     };
     const raycaster = new THREE.Raycaster(),
@@ -122,7 +149,7 @@ export function useHangarScene({
     function cameraUpdate() {
       camera.position.set(
         controls.target.x + Math.sin(controls.angle) * controls.radius,
-        controls.radius * 0.62,
+        controls.radius * 0.9,
         controls.target.z + Math.cos(controls.angle) * controls.radius,
       );
       camera.lookAt(controls.target);
@@ -137,14 +164,13 @@ export function useHangarScene({
       refreshPreview = preview.refresh;
     clearPreviewRef.current = clearPreview;
     // Puxada da caixa e porcas/parafusos no hover: só com mouse e respeitando "reduzir movimento".
-    const hasMatchMedia = typeof window.matchMedia === "function";
-    const media = (query) => hasMatchMedia && window.matchMedia(query).matches;
     const labelCanvas = document.createElement("canvas");
     labelCanvas.width = 512;
     labelCanvas.height = 144;
     const labelContext = labelCanvas.getContext("2d");
     const labelTexture = new THREE.CanvasTexture(labelCanvas);
-    const labelMaterial = new THREE.SpriteMaterial({ map: labelTexture, transparent: true, depthTest: false, depthWrite: false });
+    labelTexture.colorSpace = THREE.SRGBColorSpace;
+    const labelMaterial = new THREE.SpriteMaterial({ map: labelTexture, transparent: true, depthTest: false, depthWrite: false, toneMapped: false });
     const labelSprite = new THREE.Sprite(labelMaterial);
     labelSprite.scale.set(3.2, 0.9, 1);
     labelSprite.renderOrder = 20;
@@ -160,27 +186,30 @@ export function useHangarScene({
       if (key !== labelKey) {
         labelKey = key;
         labelContext.clearRect(0, 0, 512, 144);
-        labelContext.fillStyle = "rgba(12, 23, 27, 0.96)";
-        labelContext.strokeStyle = "#f0bd58";
-        labelContext.lineWidth = 6;
-        labelContext.beginPath(); labelContext.roundRect(4, 4, 504, 136, 20); labelContext.fill(); labelContext.stroke();
+        labelContext.fillStyle = "#ffffff";
+        labelContext.beginPath(); labelContext.roundRect(4, 4, 504, 136, 22); labelContext.fill();
+        labelContext.strokeStyle = "#dfe5ef";
+        labelContext.lineWidth = 3;
+        labelContext.stroke();
+        labelContext.fillStyle = item.code ? "#2f55e4" : "#aab6cc";
+        labelContext.beginPath(); labelContext.roundRect(22, 26, 8, 92, 4); labelContext.fill();
         labelContext.textAlign = "left";
-        labelContext.fillStyle = "#f0bd58";
-        labelContext.font = "bold 30px ui-monospace, monospace";
-        labelContext.fillText(item.code || "CAIXA VAZIA", 24, 42, 460);
-        labelContext.fillStyle = "#edf2ec";
-        labelContext.font = "24px system-ui, sans-serif";
-        labelContext.fillText(item.name || "Sem material cadastrado", 24, 78, 460);
-        labelContext.fillStyle = "#b8c4be";
-        labelContext.font = "20px ui-monospace, monospace";
-        labelContext.fillText(bin.userData.kanbanId + " · " + item.id + " · " + item.qty + " " + item.unit, 24, 116, 460);
+        labelContext.fillStyle = "#1d2433";
+        labelContext.font = "800 31px Inter, system-ui, sans-serif";
+        labelContext.fillText(item.code || "Caixa vazia", 46, 50, 440);
+        labelContext.fillStyle = "#5b6578";
+        labelContext.font = "500 23px Inter, system-ui, sans-serif";
+        labelContext.fillText(item.name || "Sem material cadastrado", 46, 84, 440);
+        labelContext.fillStyle = "#2f55e4";
+        labelContext.font = "700 20px Inter, system-ui, sans-serif";
+        labelContext.fillText(bin.userData.kanbanId + " · " + item.id + " · " + item.qty + " " + item.unit, 46, 116, 440);
         labelTexture.needsUpdate = true;
       }
       labelSprite.visible = true;
     };
     const hoverFx = createHoverFx(scene, {
       enabled: !hasMatchMedia || media("(hover: hover)"),
-      reducedMotion: media("(prefers-reduced-motion: reduce)"),
+      reducedMotion,
       isFilled: (kanbanId, slotId) =>
         !!layoutRef.current.kanbans
           .find((k) => k.id === kanbanId)
@@ -192,7 +221,7 @@ export function useHangarScene({
     focusRef.current = (x, z, radius = 10, angle = 0.63) => {
       controls.targetGoal.set(x, 0, z);
       controls.angleGoal = angle;
-      controls.radiusGoal = radius;
+      controls.radiusGoal = overview(radius);
     };
     const onDown = (e) => {
       if (e.button !== 0) return;
@@ -239,6 +268,8 @@ export function useHangarScene({
         if (slotOwner) {
           setSelectedSlotId(slotOwner.userData.slotId);
           setNotice(`${o.userData.id} · caixa ${slotOwner.userData.slotId}`);
+        } else {
+          setSelectedSlotId(null);
         }
       }
       renderer.domElement.setPointerCapture(e.pointerId);
@@ -337,11 +368,14 @@ export function useHangarScene({
     renderer.domElement.addEventListener("pointerup", onUp);
     renderer.domElement.addEventListener("pointercancel", onUp);
     renderer.domElement.addEventListener("pointerleave", () => { hoveredSlot = null; updateLabel(null); renderer.domElement.style.cursor = "grab"; hoverFx.hover(null, performance.now()); });
+    const pins = createPins(scene, kanbanMeshes, { reducedMotion });
+    const noMarks = new Set();
     const timer = new THREE.Timer();
     timer.connect(document);
     const draw = (time) => {
       timer.update(time);
       hoverFx.update(time);
+      props.update(time);
       if (hoveredSlot) { hoveredSlot.localToWorld(labelWorldPosition.set(0, 0.72, 0.55)); labelSprite.position.copy(labelWorldPosition); }
       const damping = 1 - Math.exp(-5 * timer.getDelta());
       controls.target.lerp(controls.targetGoal, damping);
@@ -352,6 +386,7 @@ export function useHangarScene({
         object.scale.setScalar(object.scale.x + (scale - object.scale.x) * damping);
       });
       cameraUpdate();
+      pins.update(time, marksRef?.current || noMarks, camera);
       renderer.render(scene, camera);
     };
     renderer.setAnimationLoop(draw);
@@ -374,6 +409,7 @@ export function useHangarScene({
       window.removeEventListener("resize", resize);
       clearPreview();
       clearPreviewRef.current = () => {};
+      disposeTree(scene);
       renderer.dispose();
       host.removeChild(renderer.domElement);
     };

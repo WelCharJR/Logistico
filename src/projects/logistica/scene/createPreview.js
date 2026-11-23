@@ -20,7 +20,7 @@ export function createPreview(previewGroup, toolRef, pathTypeRef) {
       const coords = visible.map((p) => new THREE.Vector3(p.x, 0.12, p.z));
       const line = new THREE.Line(
         new THREE.BufferGeometry().setFromPoints(coords),
-        new THREE.LineBasicMaterial({ color: toolRef.current === "area" ? "#5ce0c5" : "#ffd15d" }),
+        new THREE.LineBasicMaterial({ color: toolRef.current === "area" ? "#2f55e4" : "#f2b51d" }),
       );
       previewGroup.add(line);
       if (toolRef.current === "area" && visible.length >= 3) {
@@ -30,9 +30,9 @@ export function createPreview(previewGroup, toolRef, pathTypeRef) {
         const fill = new THREE.Mesh(
           new THREE.ShapeGeometry(shape),
           new THREE.MeshBasicMaterial({
-            color: "#4aa899",
+            color: "#3d6bff",
             transparent: true,
-            opacity: 0.3,
+            opacity: 0.22,
             side: THREE.DoubleSide,
             depthWrite: false,
           }),
@@ -54,10 +54,10 @@ export function createPreview(previewGroup, toolRef, pathTypeRef) {
         new THREE.MeshBasicMaterial({
           color:
             hover && i === visible.length - 1
-              ? "#ffffff"
+              ? "#1d2433"
               : toolRef.current === "area"
-                ? "#5ce0c5"
-                : "#e2b644",
+                ? "#2f55e4"
+                : "#f2b51d",
         }),
       );
       marker.position.set(p.x, 0.22, p.z);

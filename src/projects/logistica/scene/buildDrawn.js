@@ -9,21 +9,28 @@ export function buildAreaMesh(area) {
   const mesh = new THREE.Mesh(
     new THREE.ShapeGeometry(shape),
     new THREE.MeshStandardMaterial({
-      color: "#4aa899",
+      color: "#3d6bff",
       transparent: true,
-      opacity: 0.34,
+      opacity: 0.16,
       side: THREE.DoubleSide,
       roughness: 0.7,
+      depthWrite: false,
     }),
   );
   mesh.rotation.x = -Math.PI / 2;
   mesh.position.y = 0.05;
   mesh.userData.id = area.id;
   mesh.userData.kind = "area";
+  // Contorno tracejado azul
+  const outline = new THREE.LineLoop(
+    new THREE.BufferGeometry().setFromPoints(area.points.map((p) => new THREE.Vector3(p.x, -p.z, 0.01))),
+    new THREE.LineDashedMaterial({ color: "#2f55e4", dashSize: 0.5, gapSize: 0.3 }),
+  );
+  outline.computeLineDistances();
+  mesh.add(outline);
   return mesh;
 }
 
-// Faixa de caminho suavizada (Catmull-Rom). Estrada de pedestres ganha bordas e linha tracejada.
 export const buildPathMesh = (points, width, color, isRoad = false) => {
   const samples = new THREE.CatmullRomCurve3(
     points.map((p) => new THREE.Vector3(p.x, 0.075, p.z)),
@@ -60,8 +67,8 @@ export const buildPathMesh = (points, width, color, isRoad = false) => {
         color,
         roughness: 0.88,
         side: THREE.DoubleSide,
-        emissive: isRoad ? "#111719" : "#60430b",
-        emissiveIntensity: 0.25,
+        emissive: isRoad ? "#000000" : "#6b4a00",
+        emissiveIntensity: isRoad ? 0 : 0.15,
       }),
     ),
   );
@@ -82,7 +89,7 @@ export const buildPathMesh = (points, width, color, isRoad = false) => {
       group.add(
         new THREE.Line(
           new THREE.BufferGeometry().setFromPoints(edge),
-          new THREE.LineBasicMaterial({ color: "#e5d9b5" }),
+          new THREE.LineBasicMaterial({ color: "#ffffff" }),
         ),
       );
     }
@@ -90,7 +97,7 @@ export const buildPathMesh = (points, width, color, isRoad = false) => {
       new THREE.BufferGeometry().setFromPoints(
         samples.map((p) => new THREE.Vector3(p.x, 0.105, p.z)),
       ),
-      new THREE.LineDashedMaterial({ color: "#d8c58c", dashSize: 0.55, gapSize: 0.45 }),
+      new THREE.LineDashedMaterial({ color: "#ffffff", dashSize: 0.55, gapSize: 0.45 }),
     );
     center.computeLineDistances();
     group.add(center);
