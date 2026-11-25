@@ -1,12 +1,26 @@
 import * as THREE from "three";
 import { COLS, ROWS } from "../constants.js";
 import { COLORS, addBox, mat, roundedBox, textTexture } from "./theme.js";
+import { CONTENTS_LAYER, binGeometry, contentKind, contentsGeometry, contentsMaterial } from "./binModel.js";
 
 // Materiais das caixas: azul forte = ocupada, azul claro = vazia.
 export const binMaterials = {
-  filled: mat("#3a63ef", { roughness: 0.42 }),
-  empty: mat("#cfd9f3", { roughness: 0.6 }),
+  filled: mat("#3a63ef", { roughness: 0.42, side: THREE.DoubleSide }),
+  empty: mat("#cfd9f3", { roughness: 0.6, side: THREE.DoubleSide }),
 };
+
+// Peças dentro da caixa: aparecem só nas ocupadas, com o tipo decidido pelo código do material.
+function setContents(bin, slot) {
+  const contents = bin.userData.contents;
+  if (!contents) return;
+  contents.visible = !!slot?.code;
+  if (!slot?.code) return;
+  const kind = contentKind(slot.code);
+  if (contents.userData.kind !== kind) {
+    contents.userData.kind = kind;
+    contents.geometry = contentsGeometry(kind);
+  }
+}
 
 // Troca a cor das caixas conforme o conteúdo atual, sem recriar a cena.
 export function paintBins(slotGroups, kanbans) {
@@ -15,6 +29,7 @@ export function paintBins(slotGroups, kanbans) {
     const slot = byId.get(bin.userData.kanbanId)?.slots?.find((s) => s.id === bin.userData.slotId);
     const crate = bin.userData.crate;
     if (!crate) return;
+    setContents(bin, slot);
     const next = slot?.code ? binMaterials.filled : binMaterials.empty;
     // Estante esmaecida: troca só o material-base; o esmaecimento reaplica a cópia transparente.
     if (crate.userData.baseMat && crate.material !== crate.userData.baseMat) {
@@ -44,7 +59,7 @@ export function buildKanban(k) {
   for (const x of [-2.6, 2.6]) for (const z of [-0.64, 0.64]) addBox(group, 0.12, 3.7, 0.12, x, 1.87, z, upright, { radius: 0.04 });
   for (const x of [-2.6, 2.6]) addBox(group, 0.1, 0.1, 1.35, x, 3.68, 0, upright, { radius: 0.03 });
 
-  const crateGeo = roundedBox(0.44, 0.4, 0.72, 0.06);
+  const crateGeo = binGeometry();
   const lipGeo = roundedBox(0.46, 0.07, 0.08, 0.02);
   const tagGeo = roundedBox(0.28, 0.12, 0.025, 0.01);
   for (let row = 0; row < ROWS.length; row++) {
@@ -65,11 +80,17 @@ export function buildKanban(k) {
         crate.castShadow = true;
         crate.receiveShadow = true;
         bin.userData.crate = crate;
+        // Porta-etiqueta na frente baixa da caixa.
         const lip = new THREE.Mesh(lipGeo, lipMat);
-        lip.position.set(0, -0.11, 0.39);
+        lip.position.set(0, -0.16, 0.385);
         const tag = new THREE.Mesh(tagGeo, tagMat);
-        tag.position.set(0, -0.09, 0.377);
-        bin.add(crate, lip, tag);
+        tag.position.set(0, -0.075, 0.372);
+        const contents = new THREE.Mesh(contentsGeometry("nuts"), contentsMaterial());
+        contents.layers.set(CONTENTS_LAYER);
+        contents.receiveShadow = true;
+        bin.userData.contents = contents;
+        setContents(bin, slot);
+        bin.add(crate, contents, lip, tag);
         group.add(bin);
       };
       makeBin(0.25, 1);

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import "./logistica.css";
-import { KEY, pathTypes } from "./constants.js";
+import { COLS, KEY, ROWS, pathTypes } from "./constants.js";
 import { emptySlots, loadLayout } from "./data/layout.js";
 import { overviewFor, useHangarScene } from "./hooks/useHangarScene.js";
 import { sanitizeHall } from "./scene/hallSize.js";
@@ -351,8 +351,19 @@ export default function Logistica() {
   };
   const pickResult = (kanban, slot) => {
     document.activeElement?.blur?.();
+    // Voa até a estante e abre a caixa no 3D; a janela do kanban fica no botão "Ampliar e ver caixas".
+    setSelected(kanban.id);
+    setSelectedSlotId(slot.id);
+    setFocusedSlotId(slot.id);
     openSlotRef.current = { kanbanId: kanban.id, slotId: slot.id };
-    openKanban(kanban.id, slot.id);
+    // Mira na prateleira da caixa e chega perto, olhando de cima para dentro dela.
+    const row = Math.max(0, ROWS.indexOf(slot.id.split("-")[0]));
+    const shelfY = 0.51 + (ROWS.length - 1 - row) * 0.52;
+    // Centraliza na coluna da caixa (a estante tem 5,4 m de largura).
+    const rotation = (kanban.rotation || 0) * Math.PI / 180;
+    const column = Number(slot.id.split("-")[1]) || 1;
+    const offset = (column - 1 - (COLS - 1) / 2) * 0.5;
+    focusRef.current(kanban.x + offset * Math.cos(rotation), kanban.z - offset * Math.sin(rotation), 5.5, rotation, shelfY);
     setNotice(slot.code + " · " + kanban.id + " · caixa " + slot.id);
   };
   // Seleciona pela lista e leva a câmera até o item.

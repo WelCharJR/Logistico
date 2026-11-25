@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node --test src/projects/logistica/scene/hoverMotion.test.js src/projects/logistica/scene/createHoverFx.test.js src/projects/logistica/scene/hallSize.test.js src/projects/logistica/scene/occlusion.test.js src/projects/logistica/scene/cameraFlight.test.js src/projects/logistica/scene/pinMotion.test.js"
+    "test": "node --test src/projects/logistica/scene/hoverMotion.test.js src/projects/logistica/scene/createHoverFx.test.js src/projects/logistica/scene/hallSize.test.js src/projects/logistica/scene/occlusion.test.js src/projects/logistica/scene/cameraFlight.test.js src/projects/logistica/scene/pinMotion.test.js src/projects/logistica/scene/binModel.test.js"
   },
   "dependencies": {
     "lucide-react": "^0.383.0",

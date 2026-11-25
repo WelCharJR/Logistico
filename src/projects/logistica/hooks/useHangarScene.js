@@ -11,6 +11,7 @@ import { buildAreaMesh, buildPath } from "../scene/buildDrawn.js";
 import { createPreview } from "../scene/createPreview.js";
 import { createHoverFx } from "../scene/createHoverFx.js";
 import { createFlight, flightAt } from "../scene/cameraFlight.js";
+import { CONTENTS_LAYER } from "../scene/binModel.js";
 
 // Cena Three.js do hangar: câmera, luzes, galpão, kanbans, áreas, caminhos e mouse.
 // Só é recriada quando muda a posição dos kanbans, as áreas ou os caminhos (mesmas dependências de antes).
@@ -74,6 +75,7 @@ export function useHangarScene({
     scene.fog = new THREE.Fog(COLORS.sky, 110 * k, 230 * k);
     // Câmera com abertura pequena: perspectiva quase isométrica, como uma maquete.
     const camera = new THREE.PerspectiveCamera(30, host.clientWidth / host.clientHeight, 0.5, 400 * k);
+    camera.layers.enable(CONTENTS_LAYER); // peças dentro das caixas (fora do raycast)
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
     renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
     renderer.setSize(host.clientWidth, host.clientHeight);
@@ -181,7 +183,7 @@ export function useHangarScene({
     function cameraUpdate() {
       camera.position.set(
         controls.target.x + Math.sin(controls.angle) * controls.radius,
-        controls.radius * 0.9,
+        controls.target.y + controls.radius * 0.9,
         controls.target.z + Math.cos(controls.angle) * controls.radius,
       );
       camera.lookAt(controls.target);
@@ -256,11 +258,12 @@ export function useHangarScene({
       stopFlight();
       controls.radiusGoal = Math.max(9, Math.min(maxRadius, controls.radiusGoal + amount));
     };
-    focusRef.current = (x, z, radius = 10, angle = 0.63) => {
-      const from = { x: controls.target.x, z: controls.target.z, angle: controls.angle, radius: controls.radius };
-      controls.flight = createFlight(from, { x, z, angle, radius: overview(radius) }, performance.now(), { reducedMotion });
+    // y: altura do ponto mirado (0 = chão; a busca mira na prateleira da caixa).
+    focusRef.current = (x, z, radius = 10, angle = 0.63, y = 0) => {
+      const from = { x: controls.target.x, z: controls.target.z, y: controls.target.y, angle: controls.angle, radius: controls.radius };
+      controls.flight = createFlight(from, { x, z, y, angle, radius: y > 0 ? radius : overview(radius) }, performance.now(), { reducedMotion });
       const to = controls.flight.to;
-      controls.targetGoal.set(to.x, 0, to.z);
+      controls.targetGoal.set(to.x, to.y, to.z);
       controls.angleGoal = to.angle;
       controls.radiusGoal = to.radius;
     };
@@ -477,14 +480,16 @@ export function useHangarScene({
         shown.localToWorld(labelWorldPosition.set(0, 1.0, 0.55)); // acima da caixa, sem cobri-la
         labelSprite.position.copy(labelWorldPosition);
         const pop = reducedMotion ? 1 : Math.min(1, (time - labelShownAt) / 220);
-        const s = 0.75 + 0.25 * (1 - Math.pow(1 - pop, 3));
+        // Tamanho acompanha a distância: de perto a etiqueta não cobre as caixas vizinhas.
+        const near = Math.min(1.25, Math.max(0.42, camera.position.distanceTo(labelWorldPosition) / 22));
+        const s = near * (0.75 + 0.25 * (1 - Math.pow(1 - pop, 3)));
         labelSprite.scale.set(3.2 * s, 0.9 * s, 1);
         labelMaterial.opacity = pop;
       }
       const damping = 1 - Math.exp(-5 * timer.getDelta());
       if (controls.flight) {
         const view = flightAt(controls.flight, time);
-        controls.target.set(view.x, 0, view.z);
+        controls.target.set(view.x, view.y, view.z);
         controls.angle = view.angle;
         controls.radius = view.radius;
         if (view.done) controls.flight = null;
