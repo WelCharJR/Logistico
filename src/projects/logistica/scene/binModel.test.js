@@ -53,3 +53,10 @@ test("peças de todos os tipos ficam dentro da caixa", () => {
     assert.ok(g.attributes.position.count / 3 < 7000, kind + " leve: " + g.attributes.position.count / 3 + " triângulos");
   }
 });
+
+test("caixas da frente e do verso não se sobrepõem e cabem na prateleira", () => {
+  const frontBinBack = BIN.rackOffset - BIN.depth / 2;
+  assert.ok(frontBinBack > 0, "folga entre as costas: " + frontBinBack);
+  // Prateleira vai de z = -0.67 a 0.63 (buildKanban): a frente da caixa não passa da borda.
+  assert.ok(BIN.rackOffset + BIN.depth / 2 <= 0.63 + 1e-9);
+});

@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { COLS, ROWS } from "../constants.js";
 import { COLORS, addBox, mat, roundedBox, textTexture } from "./theme.js";
-import { CONTENTS_LAYER, binGeometry, contentKind, contentsGeometry, contentsMaterial } from "./binModel.js";
+import { BIN, CONTENTS_LAYER, binGeometry, contentKind, contentsGeometry, contentsMaterial } from "./binModel.js";
 
 // Materiais das caixas: azul forte = ocupada, azul claro = vazia.
 export const binMaterials = {
@@ -82,9 +82,9 @@ export function buildKanban(k) {
         bin.userData.crate = crate;
         // Porta-etiqueta na frente baixa da caixa.
         const lip = new THREE.Mesh(lipGeo, lipMat);
-        lip.position.set(0, -0.16, 0.385);
+        lip.position.set(0, -0.16, BIN.depth / 2 + 0.025);
         const tag = new THREE.Mesh(tagGeo, tagMat);
-        tag.position.set(0, -0.075, 0.372);
+        tag.position.set(0, -0.075, BIN.depth / 2 + 0.012);
         const contents = new THREE.Mesh(contentsGeometry("nuts"), contentsMaterial());
         contents.layers.set(CONTENTS_LAYER);
         contents.receiveShadow = true;
@@ -93,8 +93,8 @@ export function buildKanban(k) {
         bin.add(crate, contents, lip, tag);
         group.add(bin);
       };
-      makeBin(0.25, 1);
-      makeBin(-0.25, -1);
+      makeBin(BIN.rackOffset, 1);
+      makeBin(-BIN.rackOffset, -1);
     }
   }
   for (let i = 0; i < 3; i++) addBox(group, 5.2, 0.06, 0.08, 0, 0.35 + i * 1.04, -0.72, shelf, { radius: 0.02 });

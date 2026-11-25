@@ -3,10 +3,13 @@ import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 
 // Caixa bin de estante (como as de almoxarifado): aberta em cima, fundo inteiro, traseira alta,
 // laterais inclinadas e frente baixa para pegar as peças. Medidas locais da caixa:
-//   largura 0.44 (x), profundidade 0.72 (z, frente em +z), altura 0.40 atrás e 0.20 na frente.
+//   largura 0.44 (x), profundidade 0.60 (z, frente em +z), altura 0.40 atrás e 0.20 na frente.
+// Cada posição da estante tem duas caixas costas com costas (frente e verso), a rackOffset do meio:
+// a profundidade precisa caber em 2 x rackOffset para uma não entrar na outra.
 export const BIN = {
   width: 0.44,
-  depth: 0.72,
+  depth: 0.6,
+  rackOffset: 0.32,
   backHeight: 0.4,
   frontHeight: 0.2,
   wall: 0.022,
