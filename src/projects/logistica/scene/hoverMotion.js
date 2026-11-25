@@ -5,6 +5,12 @@ export const MOTION = {
   pullDistance: 0.28,
   reducedPullDistance: 0.12,
   pullMs: 180,
+  // Caixa aberta (clique): sai mais da estante, sobe um pouco e inclina a frente para baixo.
+  openDistance: 0.55,
+  reducedOpenDistance: 0.3,
+  openLift: 0.05,
+  openTilt: 0.16,
+  openMs: 320,
   cooldownMs: 600,
   burstCount: 6,
   poolSize: 30,

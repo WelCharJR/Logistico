@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { COLORS, addBox, mat, textTexture } from "./theme.js";
-import { DOCKS, HALL } from "./buildHall.js";
+import { HALL_DEFAULT, hallBounds } from "./hallSize.js";
 
 // Objetos decorativos (não clicáveis): caminhões, empilhadeiras, paletes, carregador e árvores.
 // Ficam num grupo próprio, fora do raycast, para não interferir na edição do layout.
@@ -140,11 +140,13 @@ function buildTree(scale = 1) {
   return t;
 }
 
-export function buildProps(scene, { reducedMotion = false } = {}) {
+export function buildProps(scene, { reducedMotion = false, bounds = hallBounds(HALL_DEFAULT) } = {}) {
   const props = new THREE.Group();
   props.userData.decor = true;
   scene.add(props);
-  const { minX, maxX, minZ, maxZ } = HALL;
+  const { minX, maxX, minZ, maxZ, docks } = bounds;
+  // Docas usadas pelos enfeites: as duas primeiras da esquerda e as duas últimas da direita.
+  const DOCKS = [docks[0], docks[1], docks[docks.length - 2], docks[docks.length - 1]];
 
   // Caminhão encostado na doca 4
   const truck = buildTruck();
@@ -168,26 +170,28 @@ export function buildProps(scene, { reducedMotion = false } = {}) {
   props.add(parked);
 
   const charger = buildCharger();
-  charger.position.set(minX + 2.6, 0, 10.9);
+  charger.position.set(minX + 2.6, 0, maxZ - 11.1);
   props.add(charger);
   const charging = buildForklift();
-  charging.position.set(minX + 4.6, 0, 12.6);
+  charging.position.set(minX + 4.6, 0, maxZ - 9.4);
   charging.rotation.y = -Math.PI / 2;
   props.add(charging);
 
   const mover = buildForklift({ load: true });
   props.add(mover);
   // A empilhadeira que circula vai e volta na faixa em frente às docas (fora da área dos kanbans).
-  const lane = { from: -24, to: 9, z: minZ + 8.6, travel: 14, turn: 3 };
+  const laneTo = DOCKS[2] - 5;
+  const lane = { from: minX + 6, to: laneTo, z: minZ + 8.6, travel: Math.max(10, (laneTo - minX - 6) / 2.4), turn: 3 };
 
   // Lado de fora: rua com faixa tracejada, caminhão passando e árvores
-  const road = new THREE.Mesh(new THREE.PlaneGeometry(260, 7), mat("#cbd3df", { roughness: 0.95 }));
+  const roadLength = maxX - minX + 220;
+  const road = new THREE.Mesh(new THREE.PlaneGeometry(roadLength, 7), mat("#cbd3df", { roughness: 0.95 }));
   road.rotation.x = -Math.PI / 2;
   road.position.set(0, -0.2, maxZ + 7);
   road.receiveShadow = true;
   props.add(road);
   const dash = new THREE.MeshBasicMaterial({ color: "#ffffff" });
-  for (let x = -120; x < 120; x += 4) {
+  for (let x = -roadLength / 2; x < roadLength / 2; x += 4) {
     const d = new THREE.Mesh(new THREE.PlaneGeometry(2, 0.18), dash);
     d.rotation.x = -Math.PI / 2;
     d.position.set(x, -0.19, maxZ + 7);
@@ -198,7 +202,7 @@ export function buildProps(scene, { reducedMotion = false } = {}) {
   passing.position.set(-60, -0.2, maxZ + 8.6);
   props.add(passing);
 
-  [[minX - 4, -14, 1.2], [minX - 5, -2, 1], [minX - 4, 10, 1.3], [minX - 3, 30, 1.1], [-12, maxZ + 13, 1.2], [6, maxZ + 12.5, 1], [maxX + 4, 26, 1.3], [maxX + 5, -6, 1.1], [maxX + 4, -18, 1]].forEach(([x, z, s]) => {
+  [[minX - 4, minZ + 8, 1.2], [minX - 5, minZ + 20, 1], [minX - 4, maxZ - 12, 1.3], [minX - 3, maxZ + 8, 1.1], [minX + 18, maxZ + 13, 1.2], [maxX - 24, maxZ + 12.5, 1], [maxX + 4, maxZ + 4, 1.3], [maxX + 5, maxZ - 28, 1.1], [maxX + 4, minZ + 4, 1]].forEach(([x, z, s]) => {
     const tree = buildTree(s);
     tree.position.set(x, -0.2, z);
     props.add(tree);
@@ -238,7 +242,7 @@ export function buildProps(scene, { reducedMotion = false } = {}) {
         mover.position.x = b;
         mover.rotation.y = heading + Math.PI * smooth((local - lane.travel) / lane.turn);
       }
-      passing.position.x = ((t * 4.5) % 200) - 100;
+      passing.position.x = ((t * 4.5) % (roadLength - 40)) - (roadLength - 40) / 2;
     },
   };
 }

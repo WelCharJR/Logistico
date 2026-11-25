@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Boxes, Eye, Grid3x3, Layers, Package, Plus, Search, X } from "lucide-react";
+import { Boxes, Eye, Grid3x3, Layers, Package, Plus, Ruler, Search, X } from "lucide-react";
 
 // Barra superior: marca, busca de material, mensagem de status, relógio e ações de camada.
 export default function TopBar({
@@ -16,6 +16,8 @@ export default function TopBar({
   onToggleStructure,
   onAddKanban,
   onOpenInventory,
+  onOpenHall,
+  hallOpen,
 }) {
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
@@ -107,6 +109,11 @@ export default function TopBar({
         <button className={"log-icon-btn" + (viewOnly ? " on view" : "")} onClick={onToggleViewOnly} aria-pressed={viewOnly} title={viewOnly ? "Sair do modo visualização" : "Modo visualização"}>
           <Eye size={17} />
         </button>
+        {!viewOnly && (
+          <button className={"log-icon-btn" + (hallOpen ? " on" : "")} onClick={onOpenHall} aria-pressed={hallOpen} title="Tamanho do hangar">
+            <Ruler size={17} />
+          </button>
+        )}
         <button className="log-btn ghost" onClick={onOpenInventory}>
           <Package size={16} /> <span>Materiais</span>
         </button>

@@ -2,7 +2,9 @@ import { useEffect, useRef, useState } from "react";
 import "./logistica.css";
 import { KEY, pathTypes } from "./constants.js";
 import { emptySlots, loadLayout } from "./data/layout.js";
-import { DEFAULT_VIEW, useHangarScene } from "./hooks/useHangarScene.js";
+import { overviewFor, useHangarScene } from "./hooks/useHangarScene.js";
+import { sanitizeHall } from "./scene/hallSize.js";
+import HallSizeCard from "./components/HallSizeCard.jsx";
 import TopBar from "./components/TopBar.jsx";
 import ScenePanel from "./components/ScenePanel.jsx";
 import KanbanModal from "./components/KanbanModal.jsx";
@@ -41,7 +43,20 @@ export default function Logistica() {
   const [selectedSlotId, setSelectedSlotId] = useState(null);
   const [focusedSlotId, setFocusedSlotId] = useState(null);
   const [inventoryOpen, setInventoryOpen] = useState(false);
+  const [hallOpen, setHallOpen] = useState(false);
+  const resetView = () => {
+    const view = overviewFor(layout.hall);
+    focusRef.current(view.x, view.z, view.radius, view.angle);
+  };
+  const applyHall = (size) => {
+    viewRef.current = { reset: true }; // a cena é recriada já enquadrando o novo tamanho
+    setLayout((p) => ({ ...p, hall: sanitizeHall(size) }));
+    setHallOpen(false);
+    setNotice(`Hangar redimensionado para ${size.width} × ${size.depth} m.`);
+  };
   const marksRef = useRef(new Set());
+  // Pedido para abrir uma caixa no 3D (resultado da busca); a cena atende no próximo quadro.
+  const openSlotRef = useRef(null);
   const term = query.trim().toLocaleLowerCase();
   const searchResults = term
     ? layout.kanbans.flatMap((k) =>
@@ -76,6 +91,7 @@ export default function Logistica() {
       viewRef,
       viewOnlyRef,
       marksRef,
+      openSlotRef,
     },
     setters: {
       setLayout,
@@ -123,7 +139,8 @@ export default function Logistica() {
       const valid = data && Array.isArray(data.kanbans) && Array.isArray(data.areas) && Array.isArray(data.paths)
         && data.kanbans.every((k) => typeof k.id === "string" && typeof k.name === "string" && Number.isFinite(k.x) && Number.isFinite(k.z) && Array.isArray(k.slots) && k.slots.length === 60);
       if (!valid) throw new Error("Arquivo inválido");
-      setLayout({ ...data, kanbans: data.kanbans.map((k) => ({ ...k, rotation: Number(k.rotation) || 0 })) });
+      viewRef.current = { reset: true };
+      setLayout({ ...data, hall: sanitizeHall(data.hall), kanbans: data.kanbans.map((k) => ({ ...k, rotation: Number(k.rotation) || 0 })) });
       setSelected(null);
       setInspectedKanban(null);
       setNotice("Backup restaurado. Os dados foram salvos neste navegador.");
@@ -261,7 +278,7 @@ export default function Logistica() {
   const closeKanban = () => {
     setInspectedKanban(null);
     setFocusedSlotId(null);
-    focusRef.current(DEFAULT_VIEW.x, DEFAULT_VIEW.z, DEFAULT_VIEW.radius, DEFAULT_VIEW.angle);
+    resetView();
   };
   const setPathWidth = (id, width) => {
     if (viewOnly) return;
@@ -334,6 +351,7 @@ export default function Logistica() {
   };
   const pickResult = (kanban, slot) => {
     document.activeElement?.blur?.();
+    openSlotRef.current = { kanbanId: kanban.id, slotId: slot.id };
     openKanban(kanban.id, slot.id);
     setNotice(slot.code + " · " + kanban.id + " · caixa " + slot.id);
   };
@@ -368,6 +386,8 @@ export default function Logistica() {
         onToggleStructure={() => toggleLayer("structure", setShowStructure, showStructure)}
         onAddKanban={addKanban}
         onOpenInventory={() => setInventoryOpen(true)}
+        onOpenHall={() => setHallOpen((open) => !open)}
+        hallOpen={hallOpen}
       />
       <ScenePanel
         canvasRef={canvas}
@@ -384,7 +404,7 @@ export default function Logistica() {
         onFinish={finishDrawing}
         onCancel={cancelDrawing}
         onZoom={(amount) => zoomRef.current(amount)}
-        onResetView={() => focusRef.current(DEFAULT_VIEW.x, DEFAULT_VIEW.z, DEFAULT_VIEW.radius, DEFAULT_VIEW.angle)}
+        onResetView={() => resetView()}
       />
       <KpiCards layout={layout} />
       <div className="log-cards">
@@ -403,6 +423,7 @@ export default function Logistica() {
         <TrackCard layout={layout} selected={selected} selectedSlotId={selectedSlotId} onOpenKanban={openKanban} />
         <ListCard layout={layout} selected={selected} onPick={pickFromList} />
       </div>
+      {hallOpen && !viewOnly && <HallSizeCard layout={layout} onApply={applyHall} onClose={() => setHallOpen(false)} />}
       {inventoryOpen && (
         <InventoryDrawer
           layout={layout}

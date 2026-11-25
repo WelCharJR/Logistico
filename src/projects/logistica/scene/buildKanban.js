@@ -14,7 +14,15 @@ export function paintBins(slotGroups, kanbans) {
   slotGroups.forEach((bin) => {
     const slot = byId.get(bin.userData.kanbanId)?.slots?.find((s) => s.id === bin.userData.slotId);
     const crate = bin.userData.crate;
-    if (crate) crate.material = slot?.code ? binMaterials.filled : binMaterials.empty;
+    if (!crate) return;
+    const next = slot?.code ? binMaterials.filled : binMaterials.empty;
+    // Estante esmaecida: troca só o material-base; o esmaecimento reaplica a cópia transparente.
+    if (crate.userData.baseMat && crate.material !== crate.userData.baseMat) {
+      crate.userData.baseMat = next;
+      const rack = bin.parent;
+      if (rack) rack.userData.fadeDirty = true;
+    }
+    else crate.material = crate.userData.baseMat = next;
   });
 }
 

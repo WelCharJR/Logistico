@@ -217,6 +217,21 @@
 .log-track-item > button { display: grid; place-items: center; width: 30px; height: 30px; flex: none; border: 1px solid var(--line-strong); border-radius: 9px; background: #fff; color: var(--muted); }
 .log-track-item > button:hover { color: var(--blue); border-color: var(--blue); }
 
+/* ---------- tamanho do hangar ---------- */
+.log-hall-card { z-index: 12; top: calc(var(--gap) + 72px); right: var(--gap); width: 340px; display: grid; gap: 14px; padding: 16px; background: #fff; animation: log-pop 0.22s cubic-bezier(0.23, 1, 0.32, 1); }
+.log-presets { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.log-presets button { display: grid; gap: 1px; padding: 9px 11px; border: 1px solid var(--line-strong); border-radius: 11px; background: #fff; text-align: left; transition: border-color 0.15s, background-color 0.15s; }
+.log-presets button b { font-size: 13px; }
+.log-presets button small { font-size: 11.5px; color: var(--muted); }
+.log-presets button:hover:not(:disabled) { border-color: var(--blue); }
+.log-presets button.active { border-color: var(--blue); background: var(--blue-soft); }
+.log-presets button.active b { color: var(--blue); }
+.log-range { display: grid; gap: 6px; font-size: 12px; color: var(--muted); }
+.log-range span { display: flex; justify-content: space-between; }
+.log-range b { color: var(--ink); }
+.log-range input { width: 100%; accent-color: var(--blue); }
+.log-hall-note { margin: 0; font-size: 11.5px; color: var(--muted); }
+
 /* ---------- gaveta de materiais ---------- */
 .log-drawer-backdrop { position: absolute; inset: 0; z-index: 25; background: rgba(29, 36, 51, 0.18); animation: log-fade 0.2s ease; }
 .log-drawer { position: absolute; top: var(--gap); right: var(--gap); bottom: var(--gap); width: 380px; max-width: calc(100% - 2 * var(--gap)); display: flex; flex-direction: column; gap: 14px; padding: 18px; overflow: auto; background: #fff; border-radius: var(--radius); box-shadow: 0 24px 60px rgba(24, 39, 75, 0.25); animation: log-slide 0.28s cubic-bezier(0.23, 1, 0.32, 1); }
@@ -318,6 +333,7 @@
   .log-track-card { flex-direction: column; }
   .log-track-item { width: auto; }
   .log-drawer, .log-drawer-backdrop, .kanban-backdrop { position: fixed; }
+  .log-hall-card { position: fixed !important; top: auto; left: 0; right: 0; bottom: 0; width: auto !important; border-radius: 20px 20px 0 0; z-index: 26; }
   .log-drawer { top: auto; left: 0; right: 0; bottom: 0; width: auto; max-width: none; max-height: 88svh; border-radius: 20px 20px 0 0; }
   .log-form input, .log-form select, .kanban-slot-editor input { height: 44px; font-size: 16px; }
   .kanban-inspect-body { grid-template-columns: minmax(0, 1fr); }

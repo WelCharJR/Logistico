@@ -160,3 +160,70 @@ test("hover(null) sem nada em andamento não quebra", () => {
   const { fx } = setup();
   assert.doesNotThrow(() => { fx.hover(null, 0); fx.update(0); fx.dispose(); });
 });
+
+test("abrir: a caixa sai mais que no hover, sobe e inclina; fechar devolve tudo", () => {
+  const { fx, makeBin, run } = setup();
+  const bin = makeBin();
+  fx.open(bin, 0);
+  run(0, MOTION.openMs + 20);
+  near(bin.position.z, BASE + MOTION.openDistance);
+  near(bin.position.y, 1 + MOTION.openLift);
+  near(bin.rotation.x, MOTION.openTilt);
+  assert.equal(fx.opened(), bin);
+  fx.open(null, 400);
+  run(400, 400 + MOTION.openMs + 20);
+  assert.equal(bin.position.z, BASE);
+  assert.equal(bin.position.y, 1);
+  assert.equal(bin.rotation.x, 0);
+  assert.equal(fx.opened(), null);
+});
+
+test("hover numa caixa aberta não a recolhe", () => {
+  const { fx, makeBin, run } = setup();
+  const bin = makeBin();
+  fx.open(bin, 0);
+  fx.hover(bin, 0);
+  run(0, 400);
+  fx.hover(null, 400);
+  run(400, 800);
+  near(bin.position.z, BASE + MOTION.openDistance);
+});
+
+test("abrir outra caixa fecha a anterior", () => {
+  const { fx, makeBin, run } = setup();
+  const a = makeBin("A-1"), b = makeBin("A-2", 0.5);
+  fx.open(a, 0); run(0, 400);
+  fx.open(b, 400); run(400, 800);
+  assert.equal(a.position.z, BASE);
+  near(b.position.z, BASE + MOTION.openDistance);
+});
+
+test("caixa do verso inclina para o lado dela", () => {
+  const { fx, makeBin, run } = setup();
+  const bin = makeBin();
+  bin.userData.pullDirection = -1;
+  fx.open(bin, 0); run(0, 400);
+  near(bin.position.z, BASE - MOTION.openDistance);
+  near(bin.rotation.x, -MOTION.openTilt);
+});
+
+test("enabled:false (toque): sem hover, mas abrir funciona", () => {
+  const { scene, fx, makeBin, run } = setup({ enabled: false });
+  const before = scene.children.length;
+  const bin = makeBin();
+  fx.hover(bin, 0); run(0, 200);
+  assert.equal(bin.position.z, BASE);
+  fx.open(bin, 200); run(200, 600);
+  near(bin.position.z, BASE + MOTION.openDistance);
+  assert.equal(scene.children.length, before + 1); // só a caixa, nenhuma peça
+});
+
+test("dispose devolve a caixa aberta à posição original", () => {
+  const { fx, makeBin, run } = setup();
+  const bin = makeBin();
+  fx.open(bin, 0); run(0, 200);
+  fx.dispose();
+  assert.equal(bin.position.z, BASE);
+  assert.equal(bin.position.y, 1);
+  assert.equal(bin.rotation.x, 0);
+});

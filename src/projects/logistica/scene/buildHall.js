@@ -1,21 +1,20 @@
 import * as THREE from "three";
 import { COLORS, addBox, mat, textTexture } from "./theme.js";
+import { HALL_DEFAULT, hallBounds } from "./hallSize.js";
 
-// Galpão de 60 x 44 m (x -30..30, z -22..22).
+// Galpão centrado na origem; o tamanho vem do layout (padrão 60 x 44 m).
 // Paredes altas ao fundo (z = -22) e à esquerda (x = -30), que ficam de frente para a câmera;
 // mureta baixa com grade nos lados mais próximos, para não esconder o interior.
 // O piso e as marcações ficam sempre visíveis; paredes, portas e pilares vão para structureLayer.
-export const HALL = { minX: -30, maxX: 30, minZ: -22, maxZ: 22, wallHeight: 7 };
-export const DOCKS = [-22, -14, 14, 22]; // centro (x) das portas de doca na parede do fundo
+const WALL_HEIGHT = 7;
 
-export function buildHall(scene, structureLayer) {
-  const { minX, maxX, minZ, maxZ, wallHeight } = HALL;
-  const width = maxX - minX,
-    depth = maxZ - minZ;
+export function buildHall(scene, structureLayer, bounds = hallBounds(HALL_DEFAULT)) {
+  const { minX, maxX, minZ, maxZ, width, depth, docks: DOCKS } = bounds;
+  const wallHeight = WALL_HEIGHT;
 
   // ---- terreno, laje e marcações (sempre visíveis) ----
   const ground = new THREE.Mesh(
-    new THREE.PlaneGeometry(260, 260),
+    new THREE.PlaneGeometry(width + 220, depth + 220),
     new THREE.MeshStandardMaterial({ color: COLORS.ground, roughness: 1 }),
   );
   ground.rotation.x = -Math.PI / 2;
@@ -57,9 +56,10 @@ export function buildHall(scene, structureLayer) {
   const white = paint("#ffffff");
   for (let i = 0; i < 7; i++) stripe(minX + 2.6, 4 + i * 0.7, 2.6, 0.34, white);
   // Zona de recarga das empilhadeiras (canto esquerdo)
-  const zone = stripe(minX + 4.2, 12.5, 5, 3.6, paint("#bfe7cf"));
+  const zoneZ = maxZ - 9.5;
+  const zone = stripe(minX + 4.2, zoneZ, 5, 3.6, paint("#bfe7cf"));
   zone.material.opacity = 0.75;
-  [[minX + 1.7, 12.5, 0.08, 3.6], [minX + 6.7, 12.5, 0.08, 3.6], [minX + 4.2, 10.7, 5, 0.08], [minX + 4.2, 14.3, 5, 0.08]].forEach(
+  [[minX + 1.7, zoneZ, 0.08, 3.6], [minX + 6.7, zoneZ, 0.08, 3.6], [minX + 4.2, zoneZ - 1.8, 5, 0.08], [minX + 4.2, zoneZ + 1.8, 5, 0.08]].forEach(
     ([x, z, w, d]) => stripe(x, z, w, d, paint(COLORS.green)),
   );
 
@@ -119,7 +119,13 @@ export function buildHall(scene, structureLayer) {
   addBox(structureLayer, 0.5, 0.5, 0.06, -5.2, 4.6, minZ + 0.04, blueMat, { radius: 0.08, cast: false });
 
   // Pilares nas paredes altas
-  for (const x of [-26, -18, -8, 8, 18, 26]) addBox(structureLayer, 0.45, wallHeight, 0.45, x, wallHeight / 2, minZ + 0.25, steelMat, { radius: 0.06 });
+  // Pilares a cada ~8 m, sem cobrir portas nem o letreiro
+  const pillars = [];
+  for (let x = minX + 4; x <= maxX - 4; x += 2) {
+    const clear = DOCKS.every((d) => Math.abs(d - x) > 3) && Math.abs(x) > 5.5;
+    if (clear && (!pillars.length || x - pillars[pillars.length - 1] >= 7)) pillars.push(x);
+  }
+  for (const x of pillars) addBox(structureLayer, 0.45, wallHeight, 0.45, x, wallHeight / 2, minZ + 0.25, steelMat, { radius: 0.06 });
   for (let z = minZ + 8; z < maxZ; z += 8) addBox(structureLayer, 0.45, wallHeight, 0.45, minX + 0.25, wallHeight / 2, z, steelMat, { radius: 0.06 });
 
   // Mureta com grade na frente (z = 22) e à direita (x = 30), com abertura para entrada
@@ -138,7 +144,8 @@ export function buildHall(scene, structureLayer) {
       addBox(structureLayer, 0.1, 1.6, 0.1, alongX ? x + t : x, 0.8, alongX ? z : z + t, fenceMat, { radius: 0.03 });
     }
   };
-  fence(-9, maxZ + 0.15, 42, true); // deixa a entrada entre x = 12 e x = 30
-  fence(maxX + 0.15, -4, 36, false);
-  fence(maxX + 0.15, 20.5, 3, false);
+  // entrada de 18 m no canto direito da frente
+  fence((minX + maxX - 18) / 2, maxZ + 0.15, width - 18, true);
+  fence(maxX + 0.15, (minZ + maxZ - 8) / 2, depth - 8, false);
+  fence(maxX + 0.15, maxZ - 1.5, 3, false);
 }

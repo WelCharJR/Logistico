@@ -9,24 +9,35 @@ import {
   pieceOpacity,
 } from "./hoverMotion.js";
 
-const noop = { hover() {}, update() {}, dispose() {} };
-
 // Efeito de hover das caixas: a caixa sob o mouse desliza para frente e solta porcas e parafusos.
 //   hover(bin | null, now)  -> define qual caixa está sob o mouse (now em ms, como o rAF)
+//   open(bin | null, now)   -> abre uma caixa (clique): sai mais, sobe e inclina; null fecha
+//   opened()                -> caixa aberta agora (ou null)
 //   update(now)             -> chamado a cada frame: move as caixas e as peças
 //   dispose()               -> remove tudo da cena e devolve as caixas à posição original
+// `enabled: false` (telas de toque) desliga só o hover e as peças; abrir continua funcionando.
 // `bin` é o grupo criado em buildKanban (userData.kanbanId / userData.slotId).
 export function createHoverFx(
   scene,
   { isFilled = () => true, reducedMotion = false, enabled = true, rand = Math.random } = {},
 ) {
-  if (!enabled) return noop;
-
   const distance = reducedMotion ? MOTION.reducedPullDistance : MOTION.pullDistance;
-  const bins = new Map(); // caixa -> { tween, base }  (só enquanto está fora do repouso)
+  const openDistance = reducedMotion ? MOTION.reducedOpenDistance : MOTION.openDistance;
+  const openTilt = reducedMotion ? 0 : MOTION.openTilt;
+  // caixa -> { tween (hover), openTween, base, baseY, baseRx }  (só enquanto está fora do repouso)
+  const bins = new Map();
   const lastBurst = new WeakMap();
   let current = null;
+  let openBin = null;
   let last = null;
+  const stateOf = (bin) => {
+    let state = bins.get(bin);
+    if (!state) {
+      state = { tween: createTween(0), openTween: createTween(0), base: bin.position.z, baseY: bin.position.y, baseRx: bin.rotation.x };
+      bins.set(bin, state);
+    }
+    return state;
+  };
 
   // ---- pool de peças (criadas uma vez, reaproveitadas) ----
   const nutGeo = new THREE.CylinderGeometry(0.09, 0.09, 0.05, 6);
@@ -54,7 +65,7 @@ export function createHoverFx(
     scene.add(obj);
     return { obj, mat, p: null };
   };
-  const half = MOTION.poolSize / 2;
+  const half = enabled ? MOTION.poolSize / 2 : 0;
   const pool = {
     nut: Array.from({ length: half }, () => makeSlot("nut")),
     bolt: Array.from({ length: half }, () => makeSlot("bolt")),
@@ -93,28 +104,41 @@ export function createHoverFx(
 
   return {
     hover(bin, now) {
-      if (bin === current) return;
+      if (!enabled || bin === current) return;
       if (bin && !isFilled(bin.userData.kanbanId, bin.userData.slotId)) bin = null;
       if (bin === current) return;
       const leaving = bins.get(current);
       if (leaving) retarget(leaving.tween, 0, now, MOTION.pullMs);
       current = bin;
       if (!bin) return;
-      let state = bins.get(bin);
-      if (!state) {
-        state = { tween: createTween(0), base: bin.position.z };
-        bins.set(bin, state);
-      }
-      retarget(state.tween, 1, now, MOTION.pullMs);
+      retarget(stateOf(bin).tween, 1, now, MOTION.pullMs);
       if (!reducedMotion) burst(bin, now);
     },
+
+    open(bin, now) {
+      if (bin === openBin) return;
+      const closing = bins.get(openBin);
+      if (closing) retarget(closing.openTween, 0, now, MOTION.openMs);
+      openBin = bin || null;
+      if (openBin) retarget(stateOf(openBin).openTween, 1, now, MOTION.openMs);
+    },
+
+    opened: () => openBin,
 
     update(now) {
       for (const [bin, state] of bins) {
         const v = valueAt(state.tween, now);
-        bin.position.z = state.base + v * distance * (bin.userData.pullDirection || 1);
-        if (state.tween.to === 0 && v === 0) {
+        const o = valueAt(state.openTween, now);
+        const direction = bin.userData.pullDirection || 1;
+        // A caixa fica na maior das duas puxadas: passar o mouse numa caixa aberta não a recolhe.
+        bin.position.z = state.base + Math.max(v * distance, o * openDistance) * direction;
+        bin.position.y = state.baseY + o * MOTION.openLift;
+        // Caixas do verso estão giradas 180°: o sinal mantém a frente de cada uma inclinando para baixo.
+        bin.rotation.x = state.baseRx + o * openTilt * direction;
+        if (state.tween.to === 0 && v === 0 && state.openTween.to === 0 && o === 0) {
           bin.position.z = state.base;
+          bin.position.y = state.baseY;
+          bin.rotation.x = state.baseRx;
           bins.delete(bin);
         }
       }
@@ -133,9 +157,14 @@ export function createHoverFx(
     },
 
     dispose() {
-      for (const [bin, state] of bins) bin.position.z = state.base;
+      for (const [bin, state] of bins) {
+        bin.position.z = state.base;
+        bin.position.y = state.baseY;
+        bin.rotation.x = state.baseRx;
+      }
       bins.clear();
       current = null;
+      openBin = null;
       slots.forEach((s) => {
         scene.remove(s.obj);
         s.mat.dispose();

@@ -1,4 +1,5 @@
 import { KEY, ROWS, COLS } from "../constants.js";
+import { HALL_DEFAULT, sanitizeHall } from "../scene/hallSize.js";
 
 export const emptySlots = () =>
   ROWS.flatMap((row) =>
@@ -59,6 +60,7 @@ const initial = {
   ].map(({ items, ...kanban }) => ({ ...kanban, slots: makeSlots(items) })),
   areas: [],
   paths: [],
+  hall: { ...HALL_DEFAULT },
 };
 
 export function loadLayout() {
@@ -79,6 +81,7 @@ export function loadLayout() {
       }),
       areas: saved.areas || [],
       paths: saved.paths || [],
+      hall: sanitizeHall(saved.hall),
     };
   } catch {
     return initial;

@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { COLORS } from "./theme.js";
+import { pinEnter, pinExit } from "./pinMotion.js";
 
 // Pino de localização: cabeça azul com miolo branco, ponta para baixo e anel pulsando no piso.
 function makePin() {
@@ -20,19 +21,25 @@ function makePin() {
   pin.userData.float = float;
   pin.userData.dot = dot;
 
-  const ring = new THREE.Mesh(
-    new THREE.RingGeometry(2.9, 3.15, 48),
-    new THREE.MeshBasicMaterial({ color: COLORS.blue, transparent: true, opacity: 0.5, depthWrite: false, side: THREE.DoubleSide }),
-  );
-  ring.rotation.x = -Math.PI / 2;
-  ring.renderOrder = 2;
+  // Dois anéis pulsando em contrafase + onda de choque mais fina no momento do pouso.
+  const makeRing = (inner, outer) => {
+    const ring = new THREE.Mesh(
+      new THREE.RingGeometry(inner, outer, 48),
+      new THREE.MeshBasicMaterial({ color: COLORS.blue, transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide }),
+    );
+    ring.rotation.x = -Math.PI / 2;
+    ring.renderOrder = 2;
+    return ring;
+  };
+  const ring = makeRing(2.9, 3.15);
+  const ring2 = makeRing(2.9, 3.15);
+  const shock = makeRing(3.05, 3.2);
   const disc = new THREE.Mesh(
     new THREE.CircleGeometry(2.9, 48),
     new THREE.MeshBasicMaterial({ color: COLORS.blue, transparent: true, opacity: 0.08, depthWrite: false }),
   );
   disc.rotation.x = -Math.PI / 2;
-  pin.userData.ring = ring;
-  pin.userData.disc = disc;
+  Object.assign(pin.userData, { ring, ring2, shock, disc });
   return pin;
 }
 
@@ -44,29 +51,54 @@ export function createPins(scene, kanbanMeshes, { reducedMotion = false } = {}) 
     pin.visible = false;
     scene.add(pin);
     const ground = new THREE.Group();
-    ground.add(pin.userData.ring, pin.userData.disc);
+    ground.add(pin.userData.ring, pin.userData.ring2, pin.userData.shock, pin.userData.disc);
     ground.visible = false;
     scene.add(ground);
-    pins.set(id, { pin, ground, shownAt: 0 });
+    pins.set(id, { pin, ground, shownAt: 0, hiddenAt: null });
   });
   return {
     update(time, marked, camera) {
       pins.forEach((entry, id) => {
         const rack = kanbanMeshes.get(id);
-        const on = marked.has(id);
-        if (on && !entry.pin.visible) entry.shownAt = time;
-        entry.pin.visible = entry.ground.visible = on;
-        if (!on || !rack) return;
-        entry.pin.position.set(rack.position.x, 4.5, rack.position.z);
-        entry.ground.position.set(rack.position.x, 0.03, rack.position.z);
-        const t = (time - entry.shownAt) / 1000;
-        const drop = Math.min(1, t / 0.45);
-        const ease = 1 - Math.pow(1 - drop, 3);
-        entry.pin.userData.float.position.y = (1 - ease) * 1.6 + (reducedMotion ? 0 : Math.sin(t * 2.4) * 0.12);
-        entry.pin.userData.float.rotation.y = Math.atan2(camera.position.x - rack.position.x, camera.position.z - rack.position.z);
-        const pulse = reducedMotion ? 0.5 : (t * 0.6) % 1;
-        entry.pin.userData.ring.scale.setScalar(0.75 + pulse * 0.35);
-        entry.pin.userData.ring.material.opacity = 0.55 * (1 - pulse);
+        const on = marked.has(id) && !!rack;
+        const { pin, ground } = entry;
+        const { float, ring, ring2, shock, disc } = pin.userData;
+        if (on && (!pin.visible || entry.hiddenAt !== null)) {
+          // Aparecendo (ou remarcado no meio da saída): começa a queda de novo.
+          entry.shownAt = time;
+          entry.hiddenAt = null;
+        }
+        if (!on) {
+          if (!pin.visible) return;
+          if (entry.hiddenAt === null) entry.hiddenAt = time;
+          // Saída: o pino e o chão encolhem juntos até sumir.
+          const scale = pinExit((time - entry.hiddenAt) / 1000, reducedMotion);
+          if (scale <= 0) {
+            pin.visible = ground.visible = false;
+            entry.hiddenAt = null;
+            return;
+          }
+          pin.scale.setScalar(scale);
+          ground.scale.setScalar(scale);
+          return;
+        }
+        pin.visible = ground.visible = true;
+        pin.scale.setScalar(1);
+        ground.scale.setScalar(1);
+        pin.position.set(rack.position.x, 4.5, rack.position.z);
+        ground.position.set(rack.position.x, 0.03, rack.position.z);
+        const pose = pinEnter((time - entry.shownAt) / 1000, reducedMotion);
+        float.position.y = pose.y;
+        float.scale.set(1 + pose.squash * 0.6, 1 - pose.squash, 1 + pose.squash * 0.6);
+        float.rotation.y = Math.atan2(camera.position.x - rack.position.x, camera.position.z - rack.position.z);
+        ring.scale.setScalar(pose.ringScale);
+        ring.material.opacity = pose.ringOpacity;
+        ring2.scale.setScalar(pose.ring2Scale);
+        ring2.material.opacity = pose.ring2Opacity;
+        shock.scale.setScalar(pose.shockScale);
+        shock.material.opacity = pose.shockOpacity;
+        shock.visible = pose.shockOpacity > 0;
+        disc.material.opacity = 0.08 * Math.min(1, (time - entry.shownAt) / 400);
       });
     },
   };
