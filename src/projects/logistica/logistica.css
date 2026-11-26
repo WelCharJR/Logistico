@@ -255,6 +255,15 @@
 .log-nav-stats { display: grid; grid-template-columns: 1fr 1fr auto; align-items: center; gap: 10px; }
 .log-nav-stats small { display: block; font-size: 11px; color: var(--muted); }
 .log-nav-stats b { font-size: 17px; font-weight: 800; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }
+.log-nav-mix { display: grid; gap: 6px; }
+.log-nav-mixbar { height: 6px; border-radius: 99px; overflow: hidden; background: repeating-linear-gradient(90deg, #c9d6ff 0 6px, #eef2ff 6px 10px); }
+.log-nav-mixbar span { display: block; height: 100%; background: var(--blue); border-radius: 99px; transition: width 0.3s; }
+.log-nav-mix small { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; font-size: 11.5px; color: var(--muted); }
+.log-nav-mix i { width: 14px; height: 6px; border-radius: 3px; margin-left: 4px; }
+.log-nav-mix i:first-child { margin-left: 0; }
+.log-nav-mix i.road { background: var(--blue); }
+.log-nav-mix i.trail { background: repeating-linear-gradient(90deg, var(--blue) 0 3px, #c9d6ff 3px 5px); }
+.log-nav-mix .log-nav-hint { display: block; color: var(--ink); }
 .log-nav-steps { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; }
 .log-nav-steps li { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--ink); }
 .log-nav-steps svg { color: var(--blue); flex: none; }

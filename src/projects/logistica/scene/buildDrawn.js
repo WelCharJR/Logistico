@@ -31,10 +31,12 @@ export function buildAreaMesh(area) {
   return mesh;
 }
 
+// Curva suave que passa pelos pontos do caminho (a mesma usada no desenho e no GPS).
+export const samplePath = (points) =>
+  new THREE.CatmullRomCurve3(points.map((p) => new THREE.Vector3(p.x, 0.075, p.z))).getPoints(Math.max(12, points.length * 10));
+
 export const buildPathMesh = (points, width, color, isRoad = false) => {
-  const samples = new THREE.CatmullRomCurve3(
-    points.map((p) => new THREE.Vector3(p.x, 0.075, p.z)),
-  ).getPoints(Math.max(12, points.length * 10));
+  const samples = samplePath(points);
   const positions = [],
     indices = [];
   samples.forEach((p, i) => {

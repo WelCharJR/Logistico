@@ -4,7 +4,8 @@ import { CONTENTS_LAYER } from "./binModel.js";
 
 // "GPS" no chão do hangar: faixa da rota com setas correndo até o destino e o ponto "você".
 //   const nav = createNavigator(scene, { reducedMotion })
-//   nav.setRoute(points | null)      -> desenha (ou apaga) a rota
+//   nav.setRoute(segments | null)    -> desenha (ou apaga) a rota: [{ onRoad, points }]
+//                                       na estrada = faixa azul cheia; caminho criado = faixa vazada tracejada
 //   nav.setMe({ x, z, heading } | null)
 //   nav.update(time, camera)          -> a cada quadro: anima setas e o halo
 //   nav.dispose()
@@ -14,15 +15,24 @@ const ROUTE_Y = 0.09;
 const ROUTE_WIDTH = 0.62;
 const ARROW_EVERY = 1.1; // metros entre setas
 
-function arrowTexture() {
+function arrowTexture(trail = false) {
   const canvas = document.createElement("canvas");
   canvas.width = 128;
   canvas.height = 64;
   const ctx = canvas.getContext("2d");
-  ctx.fillStyle = COLORS.blue;
-  ctx.fillRect(0, 0, 128, 64);
-  // seta ">" branca apontando para +u (sentido da caminhada)
-  ctx.strokeStyle = "#ffffff";
+  if (trail) {
+    // Caminho criado: fundo quase transparente com bordas tracejadas.
+    ctx.fillStyle = "rgba(47, 85, 228, 0.12)";
+    ctx.fillRect(0, 0, 128, 64);
+    ctx.fillStyle = COLORS.blue;
+    ctx.fillRect(0, 0, 64, 6);
+    ctx.fillRect(0, 58, 64, 6);
+  } else {
+    ctx.fillStyle = COLORS.blue;
+    ctx.fillRect(0, 0, 128, 64);
+  }
+  // seta ">" apontando para +u (sentido da caminhada): branca na estrada, azul no caminho criado
+  ctx.strokeStyle = trail ? COLORS.blue : "#ffffff";
   ctx.lineWidth = 11;
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
@@ -93,11 +103,13 @@ export function createNavigator(scene, { reducedMotion = false } = {}) {
   scene.add(root);
 
   // ---- rota ----
-  const texture = arrowTexture();
+  const texture = arrowTexture(false);
+  const trailTexture = arrowTexture(true);
   const routeMat = new THREE.MeshBasicMaterial({ map: texture, transparent: true, opacity: 0.95, depthWrite: false, side: THREE.DoubleSide });
+  const trailMat = new THREE.MeshBasicMaterial({ map: trailTexture, transparent: true, opacity: 0.95, depthWrite: false, side: THREE.DoubleSide });
   const haloMat = new THREE.MeshBasicMaterial({ color: COLORS.blue, transparent: true, opacity: 0.16, depthWrite: false, side: THREE.DoubleSide });
-  let routeMesh = null,
-    haloMesh = null,
+  // Cada trecho: { mesh, halo, from, to } com from/to = fração da rota (para "desenhar" em sequência).
+  let pieces = [],
     routeShownAt = 0,
     routeLength = 1;
   const goalRing = new THREE.Mesh(
@@ -147,27 +159,37 @@ export function createNavigator(scene, { reducedMotion = false } = {}) {
 
   let meShownAt = 0;
   const clearRoute = () => {
-    for (const mesh of [routeMesh, haloMesh]) {
-      if (!mesh) continue;
-      root.remove(mesh);
-      mesh.geometry.dispose();
-    }
-    routeMesh = haloMesh = null;
+    for (const { mesh, halo } of pieces)
+      for (const m of [mesh, halo]) {
+        root.remove(m);
+        m.geometry.dispose();
+      }
+    pieces = [];
     goalRing.visible = false;
   };
+  const lengthOf = (points) => points.reduce((s, p, i) => (i ? s + Math.hypot(p.x - points[i - 1].x, p.z - points[i - 1].z) : 0), 0);
 
   return {
-    setRoute(points, time = performance.now()) {
+    setRoute(segments, time = performance.now()) {
       clearRoute();
-      if (!points || points.length < 2) return;
-      routeMesh = new THREE.Mesh(ribbonGeometry(points, ROUTE_WIDTH), routeMat);
-      haloMesh = new THREE.Mesh(ribbonGeometry(points, ROUTE_WIDTH * 2.1, ROUTE_Y - 0.01), haloMat);
-      routeMesh.renderOrder = haloMesh.renderOrder = 2;
-      root.add(onLayer(haloMesh), onLayer(routeMesh));
-      routeLength = points.reduce((s, p, i) => (i ? s + Math.hypot(p.x - points[i - 1].x, p.z - points[i - 1].z) : 0), 0);
+      const parts = (segments || []).filter((s) => s.points?.length >= 2);
+      if (!parts.length) return;
+      routeLength = parts.reduce((sum, s) => sum + lengthOf(s.points), 0) || 1;
+      let walked = 0;
+      for (const s of parts) {
+        const len = lengthOf(s.points);
+        if (len < 0.01) continue;
+        const mesh = new THREE.Mesh(ribbonGeometry(s.points, ROUTE_WIDTH), s.onRoad ? routeMat : trailMat);
+        const halo = new THREE.Mesh(ribbonGeometry(s.points, ROUTE_WIDTH * (s.onRoad ? 2.1 : 1.6), ROUTE_Y - 0.01), haloMat);
+        mesh.renderOrder = halo.renderOrder = 2;
+        root.add(onLayer(halo), onLayer(mesh));
+        pieces.push({ mesh, halo, from: walked / routeLength, to: (walked + len) / routeLength });
+        walked += len;
+      }
       // a faixa "se desenha" do início ao fim
       routeShownAt = time;
-      const end = points[points.length - 1];
+      const lastPoints = parts[parts.length - 1].points;
+      const end = lastPoints[lastPoints.length - 1];
       goalRing.position.set(end.x, 0.1, end.z);
       goalRing.visible = true;
     },
@@ -185,14 +207,17 @@ export function createNavigator(scene, { reducedMotion = false } = {}) {
 
     update(time, camera) {
       const t = time / 1000;
-      if (routeMesh) {
-        if (!reducedMotion) texture.offset.x = -t * 1.2; // setas correm em direção ao destino
-        // revelação: o índice desenhado cresce até a rota inteira
-        const reveal = reducedMotion ? 1 : Math.min(1, (time - routeShownAt) / Math.min(900, 250 + routeLength * 25));
-        const count = routeMesh.geometry.index.count;
-        const visible = Math.ceil((count / 6) * reveal) * 6;
-        routeMesh.geometry.setDrawRange(0, visible);
-        haloMesh.geometry.setDrawRange(0, visible);
+      if (pieces.length) {
+        if (!reducedMotion) texture.offset.x = trailTexture.offset.x = -t * 1.2; // setas correm em direção ao destino
+        // revelação: cada trecho cresce na sua vez, do início ao fim da rota
+        const reveal = reducedMotion ? 1 : Math.min(1, (time - routeShownAt) / Math.min(1100, 250 + routeLength * 25));
+        for (const { mesh, halo, from, to } of pieces) {
+          const local = Math.min(1, Math.max(0, (reveal - from) / Math.max(1e-6, to - from)));
+          const count = mesh.geometry.index.count;
+          const visible = Math.ceil((count / 6) * local) * 6;
+          mesh.geometry.setDrawRange(0, visible);
+          halo.geometry.setDrawRange(0, visible);
+        }
         const pulse = reducedMotion ? 0.5 : (t * 0.8) % 1;
         goalRing.scale.setScalar(0.8 + pulse * 0.6);
         goalRing.material.opacity = 0.65 * (1 - pulse) * (reveal >= 1 ? 1 : 0);
@@ -214,11 +239,13 @@ export function createNavigator(scene, { reducedMotion = false } = {}) {
       scene.remove(root);
       root.traverse((o) => {
         o.geometry?.dispose?.();
-        if (o.material && o.material !== routeMat && o.material !== haloMat) o.material.dispose?.();
+        if (o.material && o.material !== routeMat && o.material !== trailMat && o.material !== haloMat) o.material.dispose?.();
       });
       routeMat.dispose();
+      trailMat.dispose();
       haloMat.dispose();
       texture.dispose();
+      trailTexture.dispose();
     },
   };
 }

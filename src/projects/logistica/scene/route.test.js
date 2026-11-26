@@ -105,3 +105,72 @@ test("hangar grande continua rápido", () => {
   assert.equal(ranked.length, 24);
   assert.ok(ms < 400, "demorou " + ms.toFixed(0) + " ms");
 });
+
+// ---------- estradas ----------
+
+const straightRoad = (z, x0 = -25, x1 = 25) => ({ points: [{ x: x0, z }, { x: x1, z }], width: 2.4 });
+
+test("estrada perto: a rota pega a estrada e sai dela no fim", () => {
+  const k = { id: "K", x: 20, z: 6 };
+  const grid = buildGrid(bounds, [k], [straightRoad(0)]);
+  const [r] = rankKanbans(grid, { x: -20, z: 3 }, [k]);
+  assert.ok(r.roadLength > 30, "andou só " + r.roadLength.toFixed(1) + " m na estrada");
+  assert.deepEqual(r.segments.map((s) => s.onRoad), [false, true, false]);
+  const types = routeSteps(r).map((s) => s.type);
+  assert.ok(types.includes("road") && types.includes("trail"), types.join(","));
+  assert.equal(types.at(-1), "arrive");
+  // a distância informada é a real, não o "custo" com desconto
+  near(r.length, routeLength(r.points));
+});
+
+test("estrada longe: cria o próprio caminho", () => {
+  const k = { id: "K", x: 20, z: 6 };
+  const grid = buildGrid(bounds, [k], [straightRoad(-20)]);
+  const [r] = rankKanbans(grid, { x: -20, z: 3 }, [k]);
+  assert.equal(r.roadLength, 0);
+  assert.ok(r.segments.every((s) => !s.onRoad));
+  assert.ok(!routeSteps(r).some((s) => s.type === "road"));
+});
+
+test("sem estrada nenhuma: tudo é caminho criado", () => {
+  const k = { id: "K", x: 0, z: -10 };
+  const grid = buildGrid(bounds, [k]);
+  assert.equal(grid.hasRoads, false);
+  const [r] = rankKanbans(grid, { x: 0, z: 10 }, [k]);
+  assert.equal(r.segments.length, 1);
+  assert.equal(r.segments[0].onRoad, false);
+});
+
+test("atravessar uma estrada não vira 'pegue a estrada'", () => {
+  const k = { id: "K", x: 0, z: -10 };
+  const grid = buildGrid(bounds, [k], [straightRoad(0)]);
+  const [r] = rankKanbans(grid, { x: 0, z: 10 }, [k]);
+  assert.equal(r.roadLength, 0);
+  assert.ok(!routeSteps(r).some((s) => s.type === "road"));
+});
+
+test("na estrada em L a rota segue a curva por dentro, sem cortar caminho por fora", () => {
+  const road = { points: [{ x: -20, z: 15 }, { x: -20, z: -15 }, { x: 20, z: -15 }], width: 2.4 };
+  const k = { id: "K", x: 20, z: -11 }; // frente virada para +z
+  const grid = buildGrid(bounds, [k], [road]);
+  const [r] = rankKanbans(grid, { x: -20, z: 14 }, [k]);
+  assert.ok(r.roadLength > 50, "estrada: " + r.roadLength.toFixed(1));
+  const half = road.width / 2 + grid.cell; // tolerância de uma célula
+  for (const s of r.segments.filter((s) => s.onRoad))
+    for (let i = 1; i < s.points.length; i++) {
+      const a = s.points[i - 1], b = s.points[i];
+      for (let t = 0; t <= 1; t += 0.05) {
+        const x = a.x + (b.x - a.x) * t, z = a.z + (b.z - a.z) * t;
+        const d = Math.min(Math.abs(x + 20) + Math.max(0, z - 15) + Math.max(0, -15 - z), Math.abs(z + 15) + Math.max(0, -20 - x) + Math.max(0, x - 20));
+        assert.ok(d <= half, `saiu da estrada em (${x.toFixed(1)}, ${z.toFixed(1)})`);
+      }
+    }
+  assert.ok(routeSteps(r).some((s) => s.type === "left" || s.type === "right" || (s.type === "road" && s.turn)), "deveria ter a curva");
+});
+
+test("passos com menos de 1 m são juntados ao vizinho", () => {
+  const steps = routeSteps([{ x: 0, z: 0 }, { x: 0, z: -0.5 }, { x: 4, z: -0.5 }, { x: 4, z: -8 }]);
+  assert.ok(steps.every((s) => s.type === "arrive" || s.distance >= 1), JSON.stringify(steps));
+  near(steps.reduce((sum, s) => sum + s.distance, 0), 0.5 + 4 + 7.5);
+  assert.equal(steps.at(-1).type, "arrive");
+});

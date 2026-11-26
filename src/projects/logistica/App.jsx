@@ -6,6 +6,7 @@ import { overviewFor, useHangarScene } from "./hooks/useHangarScene.js";
 import { hallBounds, sanitizeHall } from "./scene/hallSize.js";
 import { ROUTE, buildGrid, rankKanbans, routeSteps } from "./scene/route.js";
 import NavCard from "./components/NavCard.jsx";
+import { samplePath } from "./scene/buildDrawn.js";
 import HallSizeCard from "./components/HallSizeCard.jsx";
 import TopBar from "./components/TopBar.jsx";
 import ScenePanel from "./components/ScenePanel.jsx";
@@ -85,7 +86,14 @@ export default function Logistica() {
   const [walked, setWalked] = useState(0);
   const skipFitRef = useRef(false); // na chegada a câmera vai até a caixa, sem reenquadrar a rota
   const hall = sanitizeHall(layout.hall);
-  const grid = useMemo(() => buildGrid(hallBounds(hall), layout.kanbans), [kanbanPositions, hall.width, hall.depth]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Estradas de pessoas: o GPS prefere andar nelas (as rotas logísticas são das empilhadeiras).
+  const roadsKey = JSON.stringify(layout.paths.filter((p) => p.type === "pedestrian").map((p) => [p.points, p.width]));
+  const grid = useMemo(() => {
+    const roads = layout.paths
+      .filter((p) => p.type === "pedestrian" && p.points?.length >= 2)
+      .map((p) => ({ points: samplePath(p.points).map(({ x, z }) => ({ x, z })), width: p.width || pathTypes.pedestrian.width }));
+    return buildGrid(hallBounds(hall), layout.kanbans, roads);
+  }, [kanbanPositions, roadsKey, hall.width, hall.depth]); // eslint-disable-line react-hooks/exhaustive-deps
   // Com uma busca ativa, o destino é o kanban mais perto que tem o material.
   const hitIds = [...new Set(searchResults.map((r) => r.kanban.id))];
   const navTerm = hitIds.length ? query.trim() : "";
@@ -96,7 +104,7 @@ export default function Logistica() {
     return rankKanbans(grid, me, pool);
   }, [navOpen, me, locating, grid, candidatesKey]); // eslint-disable-line react-hooks/exhaustive-deps
   const destination = ranked.find((r) => r.id === destId) || ranked[0] || null;
-  const steps = useMemo(() => (destination ? routeSteps(destination.points) : []), [destination]);
+  const steps = useMemo(() => (destination ? routeSteps(destination) : []), [destination]);
   const entrance = () => {
     const b = hallBounds(hall);
     return { x: b.maxX - 9, z: b.maxZ - 2.5 }; // abertura da mureta, no canto direito da frente
@@ -147,6 +155,7 @@ export default function Logistica() {
   navRef.current = {
     me: navOpen && !locating ? me : null,
     route: navOpen && destination ? destination.points : null,
+    segments: navOpen && destination ? destination.segments : null,
     walk: navOpen ? walk : null,
     picking: navOpen && picking,
     onPick: (point) => {
@@ -547,6 +556,7 @@ export default function Logistica() {
           walking={!!walk}
           walked={walked}
           searchTerm={navTerm}
+          hasRoads={grid.hasRoads}
           kanbanName={(id) => layout.kanbans.find((k) => k.id === id)?.name || ""}
           onPickPosition={() => setPicking((p) => !p)}
           onChooseDestination={(id) => setDestId(id)}

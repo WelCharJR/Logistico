@@ -1,10 +1,13 @@
 // Rotas a pé dentro do hangar ("GPS" da demonstração). Sem Three.js, para testar no Node.
 //
-//   const grid = buildGrid(bounds, kanbans)           // chão em células; estantes bloqueadas
+//   const grid = buildGrid(bounds, kanbans, roads)    // chão em células; estantes bloqueadas; estradas marcadas
 //   const ranked = rankKanbans(grid, me, kanbans)     // todos os kanbans, do mais perto ao mais longe
-//   ranked[0] -> { id, length, points: [{x,z}...] }   // rota já suavizada
-//   routeSteps(points)                                 // instruções: siga / vire à esquerda / chegou
+//   ranked[0] -> { id, length, roadLength, points, segments: [{ onRoad, points, length }] }
+//   routeSteps(route)                                  // instruções: siga / vire / pegue a estrada / saia / chegou
 //   pointAlong(points, distance)                       // posição e direção para animar a caminhada
+//
+// Estradas: andar sobre elas "custa" roadFactor do normal. A rota faz um desvio curto para pegar uma
+// estrada perto; se a estrada está longe (ou não existe), ela cria o próprio caminho por fora.
 
 export const ROUTE = {
   cell: 0.5, // tamanho da célula da grade (m)
@@ -14,29 +17,43 @@ export const ROUTE = {
   wallMargin: 0.9, // distância mínima das paredes
   approach: 1.1, // onde a pessoa para, à frente da face da estante
   walkSpeed: 1.3, // m/s, passo normal
+  roadFactor: 0.5, // custo de andar na estrada (0.5 = vale um desvio de até ~2x para usá-la)
+  minRoadRun: 3, // trechos de estrada mais curtos que isso (só atravessar) contam como caminho criado
+  minStep: 1, // instruções com menos que isso (m) são juntadas com a vizinha
 };
 
 // ---------- grade ----------
 
-export function buildGrid(bounds, kanbans = [], cell = ROUTE.cell) {
+const distToSegment = (px, pz, a, b) => {
+  const dx = b.x - a.x,
+    dz = b.z - a.z;
+  const len2 = dx * dx + dz * dz;
+  const t = len2 ? Math.max(0, Math.min(1, ((px - a.x) * dx + (pz - a.z) * dz) / len2)) : 0;
+  return Math.hypot(px - (a.x + dx * t), pz - (a.z + dz * t));
+};
+
+// roads: [{ points: [{x,z}...], width }] — já amostradas na curva que aparece na tela.
+export function buildGrid(bounds, kanbans = [], roads = [], cell = ROUTE.cell) {
   // Origem alinhada à célula: rotas passam por coordenadas "redondas".
   const minX = Math.ceil((bounds.minX + ROUTE.wallMargin) / cell) * cell,
     minZ = Math.ceil((bounds.minZ + ROUTE.wallMargin) / cell) * cell;
   const cols = Math.max(1, Math.floor((bounds.maxX - ROUTE.wallMargin - minX) / cell) + 1);
   const rows = Math.max(1, Math.floor((bounds.maxZ - ROUTE.wallMargin - minZ) / cell) + 1);
   const blocked = new Uint8Array(cols * rows);
+  const road = new Uint8Array(cols * rows);
+  const span = (lo, hi) => [
+    [Math.max(0, Math.floor((lo.x - minX) / cell)), Math.min(cols - 1, Math.ceil((hi.x - minX) / cell))],
+    [Math.max(0, Math.floor((lo.z - minZ) / cell)), Math.min(rows - 1, Math.ceil((hi.z - minZ) / cell))],
+  ];
+
   const hx = ROUTE.rackHalfX + ROUTE.clearance,
     hz = ROUTE.rackHalfZ + ROUTE.clearance;
   for (const k of kanbans) {
     const r = ((k.rotation || 0) * Math.PI) / 180;
     const cos = Math.cos(r),
       sin = Math.sin(r);
-    // Retângulo girado: testa só as células dentro do círculo que o contém.
     const reach = Math.hypot(hx, hz);
-    const c0 = Math.max(0, Math.floor((k.x - reach - minX) / cell)),
-      c1 = Math.min(cols - 1, Math.ceil((k.x + reach - minX) / cell));
-    const r0 = Math.max(0, Math.floor((k.z - reach - minZ) / cell)),
-      r1 = Math.min(rows - 1, Math.ceil((k.z + reach - minZ) / cell));
+    const [[c0, c1], [r0, r1]] = span({ x: k.x - reach, z: k.z - reach }, { x: k.x + reach, z: k.z + reach });
     for (let row = r0; row <= r1; row++)
       for (let col = c0; col <= c1; col++) {
         const dx = minX + col * cell - k.x,
@@ -47,7 +64,23 @@ export function buildGrid(bounds, kanbans = [], cell = ROUTE.cell) {
         if (Math.abs(lx) <= hx && Math.abs(lz) <= hz) blocked[row * cols + col] = 1;
       }
   }
-  return { cols, rows, minX, minZ, cell, blocked };
+
+  for (const { points = [], width = 2.4 } of roads) {
+    const half = width / 2;
+    for (let i = 1; i < points.length; i++) {
+      const a = points[i - 1],
+        b = points[i];
+      const [[c0, c1], [r0, r1]] = span(
+        { x: Math.min(a.x, b.x) - half, z: Math.min(a.z, b.z) - half },
+        { x: Math.max(a.x, b.x) + half, z: Math.max(a.z, b.z) + half },
+      );
+      for (let row = r0; row <= r1; row++)
+        for (let col = c0; col <= c1; col++)
+          if (distToSegment(minX + col * cell, minZ + row * cell, a, b) <= half) road[row * cols + col] = 1;
+    }
+  }
+  for (let i = 0; i < road.length; i++) if (blocked[i]) road[i] = 0;
+  return { cols, rows, minX, minZ, cell, blocked, road, hasRoads: road.some(Boolean) };
 }
 
 const cellOf = (grid, p) => {
@@ -83,15 +116,14 @@ export function nearestFree(grid, p) {
   return -1;
 }
 
-// ---------- distâncias a partir de um ponto (Dijkstra, 8 direções, sem cortar quina) ----------
+// ---------- custos a partir de um ponto (Dijkstra, 8 direções, sem cortar quina) ----------
 
 function distanceField(grid, startIndex) {
   const n = grid.blocked.length;
   // Float64: com Float32 o arredondamento faz o Dijkstra pular ou repetir células.
   const dist = new Float64Array(n).fill(Infinity);
   const prev = new Int32Array(n).fill(-1);
-  // heap binário de [dist, índice]
-  const heap = [];
+  const heap = []; // heap binário de [custo, índice]
   const push = (d, i) => {
     heap.push([d, i]);
     let k = heap.length - 1;
@@ -123,8 +155,8 @@ function distanceField(grid, startIndex) {
   };
   dist[startIndex] = 0;
   push(0, startIndex);
-  const { cols, rows, blocked, cell } = grid;
-  const diag = Math.SQRT2 * cell;
+  const { cols, rows, blocked, road, cell } = grid;
+  const weight = (i) => (road[i] ? ROUTE.roadFactor : 1);
   while (heap.length) {
     const [d, i] = pop();
     if (d > dist[i]) continue;
@@ -139,7 +171,8 @@ function distanceField(grid, startIndex) {
         const j = r * cols + c;
         if (blocked[j]) continue;
         if (dr && dc && (blocked[row * cols + c] || blocked[r * cols + col])) continue; // não corta quina
-        const nd = d + (dr && dc ? diag : cell);
+        const step = (dr && dc ? Math.SQRT2 : 1) * cell * ((weight(i) + weight(j)) / 2);
+        const nd = d + step;
         if (nd < dist[j]) {
           dist[j] = nd;
           prev[j] = i;
@@ -152,14 +185,19 @@ function distanceField(grid, startIndex) {
 
 // ---------- suavização: liga pontos que se enxergam (linhas retas em vez de "escadinha") ----------
 
-function clearLine(grid, a, b) {
+// onRoad: o atalho também precisa ficar dentro da estrada (senão "corta" a curva por fora).
+function clearLine(grid, a, b, onRoad = false) {
   const steps = Math.ceil(Math.hypot(b.x - a.x, b.z - a.z) / (grid.cell * 0.35));
   for (let s = 1; s < steps; s++) {
     const t = s / steps;
-    const p = { x: a.x + (b.x - a.x) * t, z: a.z + (b.z - a.z) * t };
+    const col = (a.x + (b.x - a.x) * t - grid.minX) / grid.cell,
+      row = (a.z + (b.z - a.z) * t - grid.minZ) / grid.cell;
+    if (onRoad) {
+      const c = Math.round(col),
+        r = Math.round(row);
+      if (c < 0 || r < 0 || c >= grid.cols || r >= grid.rows || !grid.road[r * grid.cols + c]) return false;
+    }
     // checa a célula e as vizinhas para manter a folga em diagonais
-    const col = (p.x - grid.minX) / grid.cell,
-      row = (p.z - grid.minZ) / grid.cell;
     for (const c of [Math.floor(col), Math.ceil(col)])
       for (const r of [Math.floor(row), Math.ceil(row)]) {
         if (c < 0 || r < 0 || c >= grid.cols || r >= grid.rows) return false;
@@ -169,14 +207,14 @@ function clearLine(grid, a, b) {
   return true;
 }
 
-export function smooth(grid, points) {
+export function smooth(grid, points, onRoad = false) {
   if (points.length <= 2) return points.slice();
   const out = [points[0]];
   let anchor = 0;
   while (anchor < points.length - 1) {
     let next = anchor + 1;
     for (let k = points.length - 1; k > anchor + 1; k--)
-      if (clearLine(grid, points[anchor], points[k])) {
+      if (clearLine(grid, points[anchor], points[k], onRoad)) {
         next = k;
         break;
       }
@@ -187,6 +225,35 @@ export function smooth(grid, points) {
 }
 
 export const routeLength = (points) => points.reduce((sum, p, i) => (i ? sum + Math.hypot(p.x - points[i - 1].x, p.z - points[i - 1].z) : 0), 0);
+
+// Divide o caminho (células) em trechos "na estrada" / "caminho criado" e suaviza cada um.
+function splitRuns(grid, cells, from) {
+  const runs = [];
+  cells.forEach((i, n) => {
+    const onRoad = !!grid.road[i];
+    const point = n === 0 ? { x: from.x, z: from.z } : centerOf(grid, i);
+    const last = runs[runs.length - 1];
+    if (last && last.onRoad === onRoad) last.points.push(point);
+    // o trecho novo começa onde o anterior terminou (sem buraco na linha)
+    else runs.push({ onRoad, points: last ? [last.points[last.points.length - 1], point] : [point] });
+  });
+  // Atravessar uma estrada (trecho curto) não é "pegar a estrada": junta com os vizinhos.
+  const merged = [];
+  for (const run of runs) {
+    const onRoad = run.onRoad && routeLength(run.points) >= ROUTE.minRoadRun;
+    const prev = merged[merged.length - 1];
+    if (prev && prev.onRoad === onRoad) prev.points.push(...run.points.slice(1));
+    else merged.push({ onRoad, points: run.points.slice() });
+  }
+  const segments = merged
+    .map((run) => {
+      const pts = run.points.length === 1 ? [run.points[0], run.points[0]] : run.points;
+      const points = smooth(grid, pts, run.onRoad);
+      return { onRoad: run.onRoad, points, length: routeLength(points) };
+    })
+    .filter((run) => run.length > 0.01);
+  return segments.length ? segments : [{ onRoad: false, points: [{ x: from.x, z: from.z }, centerOf(grid, cells[cells.length - 1])], length: 0 }];
+}
 
 // Pontos onde a pessoa para: à frente das duas faces da estante (frente e verso têm caixas).
 export function accessPoints(k) {
@@ -216,13 +283,21 @@ export function rankKanbans(grid, from, kanbans) {
     }
     if (!best) continue;
     const cells = [];
-    for (let i = best.goal; i !== -1; i = prev[i]) cells.push(centerOf(grid, i));
+    for (let i = best.goal; i !== -1; i = prev[i]) cells.push(i);
     cells.reverse();
-    const raw = [{ x: from.x, z: from.z }, ...cells.slice(1)];
-    if (cells.length === 1) raw.push(cells[0]);
-    const points = smooth(grid, raw);
-    ranked.push({ id: k.id, face: best.face, points, length: routeLength(points) });
+    if (cells.length === 1) cells.push(cells[0]);
+    const segments = splitRuns(grid, cells, from);
+    const points = segments.flatMap((s, i) => (i ? s.points.slice(1) : s.points));
+    ranked.push({
+      id: k.id,
+      face: best.face,
+      points,
+      segments,
+      length: routeLength(points),
+      roadLength: segments.filter((s) => s.onRoad).reduce((sum, s) => sum + s.length, 0),
+    });
   }
+  // "Mais perto" = menor distância a pé de verdade (o custo da estrada só escolhe o trajeto).
   return ranked.sort((a, b) => a.length - b.length);
 }
 
@@ -230,25 +305,57 @@ export function rankKanbans(grid, from, kanbans) {
 
 const TURN_MIN = (25 * Math.PI) / 180; // abaixo disso é "siga em frente"
 
-// [{ type: "start" | "left" | "right" | "arrive", distance }] — distance = metros até o próximo passo.
-export function routeSteps(points) {
-  if (points.length < 2) return [{ type: "arrive", distance: 0 }];
-  const steps = [{ type: "start", distance: 0 }];
+const turnAt = (a, b, c) => {
+  const ax = b.x - a.x,
+    az = b.z - a.z,
+    bx = c.x - b.x,
+    bz = c.z - b.z;
+  const angle = Math.atan2(ax * bz - az * bx, ax * bx + az * bz);
+  if (Math.abs(angle) < TURN_MIN) return null;
+  // Visto de cima (y para cima), cruz positiva = virar à direita.
+  return angle > 0 ? "right" : "left";
+};
+
+// Aceita a rota ({ segments }) ou só a lista de pontos.
+// [{ type: "start" | "left" | "right" | "road" | "trail" | "arrive", turn?, onRoad, distance }]
+//   road = pegar a estrada aqui; trail = sair dela (caminho criado). distance = metros até o próximo passo.
+export function routeSteps(route) {
+  const segments = Array.isArray(route) ? [{ onRoad: false, points: route }] : route.segments;
+  const points = [],
+    roadAt = []; // roadAt[i]: o trecho que termina em points[i] está na estrada
+  segments.forEach((s, si) =>
+    s.points.forEach((p, pi) => {
+      if (si && !pi) return; // ponto de junção já está na lista
+      points.push(p);
+      roadAt.push(s.onRoad);
+    }),
+  );
+  if (points.length < 2) return [{ type: "arrive", onRoad: false, distance: 0 }];
+  const steps = [{ type: "start", onRoad: roadAt[1], distance: 0 }];
   for (let i = 1; i < points.length; i++) {
-    const seg = Math.hypot(points[i].x - points[i - 1].x, points[i].z - points[i - 1].z);
-    steps[steps.length - 1].distance += seg;
+    steps[steps.length - 1].distance += Math.hypot(points[i].x - points[i - 1].x, points[i].z - points[i - 1].z);
     if (i === points.length - 1) break;
-    const ax = points[i].x - points[i - 1].x,
-      az = points[i].z - points[i - 1].z;
-    const bx = points[i + 1].x - points[i].x,
-      bz = points[i + 1].z - points[i].z;
-    const angle = Math.atan2(ax * bz - az * bx, ax * bx + az * bz);
-    if (Math.abs(angle) < TURN_MIN) continue;
-    // Visto de cima (y para cima), cruz positiva = virar à direita.
-    steps.push({ type: angle > 0 ? "right" : "left", distance: 0 });
+    const turn = turnAt(points[i - 1], points[i], points[i + 1]);
+    if (roadAt[i + 1] !== roadAt[i]) steps.push({ type: roadAt[i + 1] ? "road" : "trail", turn, onRoad: roadAt[i + 1], distance: 0 });
+    else if (turn) steps.push({ type: turn, turn, onRoad: roadAt[i + 1], distance: 0 });
   }
-  steps.push({ type: "arrive", distance: 0 });
-  return steps;
+  steps.push({ type: "arrive", onRoad: false, distance: 0 });
+  // Passos minúsculos (< 1 m) só poluem as instruções: somam no vizinho.
+  const tidy = [];
+  for (const step of steps) {
+    const prev = tidy[tidy.length - 1];
+    if (prev && prev.type !== "arrive" && prev.distance < ROUTE.minStep && step.type !== "arrive") {
+      // o passo curto some; o seguinte herda a distância. Entrar/sair da estrada vale mais que a curva:
+      // "pegue a estrada" seguido de "vire à direita" logo depois vira "pegue a estrada à direita".
+      const event = prev.type === "road" || prev.type === "trail";
+      tidy[tidy.length - 1] = event
+        ? { ...step, type: prev.type, turn: step.turn || prev.turn, distance: step.distance + prev.distance }
+        : { ...step, distance: step.distance + prev.distance };
+    } else if (prev && step.type !== "arrive" && step.distance < ROUTE.minStep && step.type !== "road" && step.type !== "trail") {
+      prev.distance += step.distance;
+    } else tidy.push({ ...step });
+  }
+  return tidy;
 }
 
 // Posição a `distance` metros do início, com a direção (rad, como rotation.y) do trecho.

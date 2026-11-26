@@ -525,7 +525,7 @@ export function useHangarScene({
       if (nav) {
         if (nav.route !== navRoute) {
           navRoute = nav.route;
-          navigator.setRoute(navRoute, time);
+          navigator.setRoute(nav.segments || (navRoute ? [{ onRoad: false, points: navRoute }] : null), time);
         }
         let pose = nav.me;
         if (nav.walk && navRoute) {

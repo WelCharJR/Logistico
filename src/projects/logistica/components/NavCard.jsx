@@ -1,4 +1,4 @@
-import { ArrowUp, CornerUpLeft, CornerUpRight, Crosshair, Flag, Footprints, LoaderCircle, Play, Square, X } from "lucide-react";
+import { ArrowUp, CornerUpLeft, CornerUpRight, Crosshair, Flag, Footprints, LoaderCircle, Play, Route, Square, Waypoints, X } from "lucide-react";
 import { walkSeconds } from "../scene/route.js";
 
 const meters = (m) => (m < 10 ? m.toFixed(1).replace(".", ",") : Math.round(m)) + " m";
@@ -8,13 +8,18 @@ const duration = (m) => {
   return s < 60 ? s + " s" : Math.floor(s / 60) + " min " + (s % 60) + " s";
 };
 
-const STEP_ICON = { start: ArrowUp, left: CornerUpLeft, right: CornerUpRight, arrive: Flag };
+const TURN_ICON = { left: CornerUpLeft, right: CornerUpRight };
+const STEP_ICON = { start: ArrowUp, left: CornerUpLeft, right: CornerUpRight, road: Route, trail: Waypoints, arrive: Flag };
+const iconFor = (step) => (step.type === "road" || step.type === "trail" ? TURN_ICON[step.turn] || STEP_ICON[step.type] : STEP_ICON[step.type]);
+const side = (turn) => (turn === "left" ? " à esquerda" : turn === "right" ? " à direita" : "");
 export function stepText(step, destination) {
   if (step.type === "arrive") return "Chegou ao " + destination;
   const go = "siga " + meters(step.distance);
+  if (step.type === "road") return "Pegue a estrada" + side(step.turn) + " e " + go;
+  if (step.type === "trail") return "Saia da estrada" + side(step.turn) + " e " + go;
   if (step.type === "left") return "Vire à esquerda e " + go;
   if (step.type === "right") return "Vire à direita e " + go;
-  return "Siga em frente por " + meters(step.distance);
+  return (step.onRoad ? "Siga pela estrada por " : "Siga em frente por ") + meters(step.distance);
 }
 
 // Passo atual da caminhada: o primeiro cujo trecho ainda não terminou.
@@ -38,6 +43,7 @@ export default function NavCard({
   walking,
   walked,
   searchTerm,
+  hasRoads,
   kanbanName,
   onPickPosition,
   onChooseDestination,
@@ -50,7 +56,8 @@ export default function NavCard({
   const arrived = !!route && remaining < 0.3;
   const now = route && walking ? currentStep(steps, walked) : { index: 0, left: steps[0]?.distance || 0 };
   const active = arrived ? { type: "arrive", distance: 0 } : steps[now.index];
-  const ActiveIcon = active ? STEP_ICON[active.type] : ArrowUp;
+  const ActiveIcon = active ? iconFor(active) : ArrowUp;
+  const roadShare = route && route.length > 0 ? route.roadLength / route.length : 0;
 
   return (
     <aside className="log-card log-nav-card" aria-label="Rota até o kanban">
@@ -122,10 +129,27 @@ export default function NavCard({
                 )}
               </div>
 
+              <div className="log-nav-mix">
+                <div className="log-nav-mixbar" aria-hidden="true">
+                  <span style={{ width: roadShare * 100 + "%" }} />
+                </div>
+                <small>
+                  <i className="road" /> Pela estrada {meters(route.roadLength)}
+                  <i className="trail" /> Caminho criado {meters(Math.max(0, route.length - route.roadLength))}
+                </small>
+                {route.roadLength < 0.5 && (
+                  <small className="log-nav-hint">
+                    {hasRoads
+                      ? "Nenhuma estrada perto: criei um caminho direto até o kanban."
+                      : "Não há estradas desenhadas: criei um caminho. Desenhe estradas com a ferramenta de caminho."}
+                  </small>
+                )}
+              </div>
+
               {steps.length > 2 && !walking && (
                 <ol className="log-nav-steps">
                   {steps.map((step, i) => {
-                    const Icon = STEP_ICON[step.type];
+                    const Icon = iconFor(step);
                     return (
                       <li key={i}>
                         <Icon size={14} />
