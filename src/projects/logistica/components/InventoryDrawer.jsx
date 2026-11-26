@@ -1,9 +1,25 @@
 import { useState } from "react";
-import { Download, FlaskConical, Package, Upload, X } from "lucide-react";
+import { Download, FlaskConical, LayoutGrid, Package, Upload, X } from "lucide-react";
 
 // Gaveta "Materiais": cadastro de itens, backup e lista completa do estoque.
-export default function InventoryDrawer({ layout, viewOnly, onClose, onAddItem, onRemoveItem, onExportBackup, onImportBackup, onDemoStock, onOpenKanban }) {
-  const [confirmDemo, setConfirmDemo] = useState(false);
+export default function InventoryDrawer({ layout, viewOnly, onClose, onAddItem, onRemoveItem, onExportBackup, onImportBackup, onDemoStock, onDemoContents, onOpenKanban }) {
+  // Botões de exemplo pedem um segundo clique: "stock" | "contents" | null
+  const [confirmDemo, setConfirmDemo] = useState(null);
+  const demoButton = (kind, Icon, label, title, action) => (
+    <button
+      type="button"
+      className={"log-btn " + (confirmDemo === kind ? "danger" : "ghost")}
+      onClick={() => {
+        if (confirmDemo !== kind) return setConfirmDemo(kind);
+        setConfirmDemo(null);
+        action();
+      }}
+      onBlur={() => setConfirmDemo(null)}
+      title={title}
+    >
+      <Icon size={15} /> {confirmDemo === kind ? "Clique de novo para aplicar" : label}
+    </button>
+  );
   const [kanbanId, setKanbanId] = useState(layout.kanbans[0]?.id || "");
   const [code, setCode] = useState("");
   const [name, setName] = useState("");
@@ -112,21 +128,24 @@ export default function InventoryDrawer({ layout, viewOnly, onClose, onAddItem, 
               />
             </label>
           )}
-          {!viewOnly && onDemoStock && (
-            <button
-              type="button"
-              className={"log-btn " + (confirmDemo ? "danger" : "ghost")}
-              onClick={() => {
-                if (!confirmDemo) return setConfirmDemo(true);
-                setConfirmDemo(false);
-                onDemoStock();
-              }}
-              onBlur={() => setConfirmDemo(false)}
-              title="Muda quantidades e datas de conferência para mostrar todas as situações de estoque"
-            >
-              <FlaskConical size={15} /> {confirmDemo ? "Clique de novo para aplicar" : "Simular estoque de exemplo"}
-            </button>
-          )}
+          {!viewOnly &&
+            onDemoContents &&
+            demoButton(
+              "contents",
+              LayoutGrid,
+              "Simular conteúdo dos kanbans",
+              "Troca o conteúdo de todas as caixas por materiais de exemplo (rebites, porcas, parafusos, brocas…)",
+              onDemoContents,
+            )}
+          {!viewOnly &&
+            onDemoStock &&
+            demoButton(
+              "stock",
+              FlaskConical,
+              "Simular estoque de exemplo",
+              "Muda quantidades e datas de conferência para mostrar todas as situações de estoque",
+              onDemoStock,
+            )}
         </div>
 
         <span className="log-eyebrow">Estoque · {inventory.length} caixas</span>

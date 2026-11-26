@@ -50,10 +50,10 @@ export const CONTENT_KINDS = ["nuts", "bolts", "washers", "rivets"];
 export function contentKind(code = "") {
   const text = String(code).toUpperCase();
   // Palavras óbvias primeiro; o resto vai pelo "hash" do código.
-  if (/WASHER|ARRUELA|NAS1149|AN960/.test(text)) return "washers";
-  if (/NUT|PORCA|MS21042|AN365/.test(text)) return "nuts";
-  if (/RIVET|REBITE|NAS1097|MS20470/.test(text)) return "rivets";
-  if (/BOLT|PARAF|SCREW|NAS6|AN3/.test(text)) return "bolts";
+  if (/WASHER|ARRUELA|NAS1149|AN960|NAS1611/.test(text)) return "washers"; // NAS1611 = anel O-ring
+  if (/NUT|PORCA|MS2104|AN365|AN310|HL7/.test(text)) return "nuts"; // HL70 = colar Hi-Lok
+  if (/RIVET|REBITE|NAS1097|MS20470|MS20426|CR32|CL-/.test(text)) return "rivets"; // CL- = cleco
+  if (/BOLT|PARAF|SCREW|NAS6|AN3|MS2469|MS2703|HL1|DR-/.test(text)) return "bolts"; // HL10 = pino Hi-Lok; DR- = broca
   let hash = 0;
   for (const ch of text) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0;
   return CONTENT_KINDS[hash % CONTENT_KINDS.length];

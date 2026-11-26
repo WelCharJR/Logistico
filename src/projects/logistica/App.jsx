@@ -7,6 +7,7 @@ import { hallBounds, sanitizeHall } from "./scene/hallSize.js";
 import { ROUTE, buildGrid, rankKanbans, routeSteps } from "./scene/route.js";
 import NavCard from "./components/NavCard.jsx";
 import { STATUS, demoStock, groupResults } from "./data/stock.js";
+import { demoHangar } from "./data/demoContents.js";
 import { samplePath } from "./scene/buildDrawn.js";
 import HallSizeCard from "./components/HallSizeCard.jsx";
 import TopBar from "./components/TopBar.jsx";
@@ -599,6 +600,12 @@ export default function Logistica() {
           onRemoveItem={removeItem}
           onExportBackup={exportBackup}
           onImportBackup={importBackup}
+          onDemoContents={() => {
+            setLayout((p) => ({ ...p, kanbans: demoHangar(p.kanbans) }));
+            setSelected(null);
+            setSelectedSlotId(null);
+            setNotice("Conteúdo de exemplo aplicado em " + layout.kanbans.length + " kanbans. Busque MS21042 para ver os avisos.");
+          }}
           onDemoStock={() => {
             setLayout((p) => ({ ...p, kanbans: demoStock(p.kanbans) }));
             setNotice("Estoque de exemplo aplicado: caixas cheias, acabando, vazias e sem conferência.");

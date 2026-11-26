@@ -89,6 +89,11 @@
 .log-search-results > button.tone-gray .log-result-icon { background: #eef1f5; color: #5d6778; }
 .log-search-results > button.tone-red b, .log-search-results > button.tone-gray b { color: var(--muted); }
 .log-search-results > button span small { white-space: normal; }
+.log-search-results > button[class^="tone-"] { grid-template-columns: 32px minmax(0, 1fr); }
+.log-result-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.log-result-head b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.log-result-head .log-stock-badge { flex: none; }
+@media (min-width: 900px) { .log-search-results { min-width: 400px; } }
 .log-notice { flex: 1 1 auto; min-width: 0; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 12px; }
 .log-site { display: flex; align-items: center; gap: 9px; flex: none; padding: 5px 12px 5px 5px; border: 1px solid var(--line); border-radius: 11px; background: #fff; }
 .log-site-badge { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 8px; background: var(--blue); color: #fff; font-size: 10px; font-weight: 800; }
@@ -313,10 +318,11 @@
 .log-form .span { grid-column: 1 / -1; }
 .log-form input, .log-form select { width: 100%; min-width: 0; height: 38px; padding: 0 10px; border: 1px solid var(--line-strong); border-radius: 9px; background: #fff; color: var(--ink); font: inherit; font-size: 13px; }
 .log-form input:focus, .log-form select:focus { outline: none; border-color: var(--blue); box-shadow: 0 0 0 3px rgba(47, 85, 228, 0.12); }
-.log-backup { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.log-backup { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.log-backup .log-btn { min-width: 0; height: auto; min-height: 38px; padding: 7px 10px; white-space: normal; line-height: 1.2; text-align: center; }
+.log-backup .log-btn svg { flex: none; }
 .log-backup label { position: relative; overflow: hidden; cursor: pointer; }
 .log-backup input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
-.log-backup > :nth-child(3) { grid-column: 1 / -1; }
 .log-inventory { display: grid; gap: 4px; }
 .log-inventory > div { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 8px; padding: 4px 4px 4px 0; border-bottom: 1px solid var(--line); }
 .log-inv-main { display: block; min-width: 0; padding: 6px 8px; border: 0; border-radius: 8px; background: transparent; text-align: left; }

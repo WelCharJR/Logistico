@@ -87,14 +87,14 @@ export default function TopBar({
                       <Icon size={15} />
                     </span>
                     <span>
-                      <b>
-                        {g.kanban.id} · {g.code}
-                      </b>
+                      <span className="log-result-head">
+                        <b>
+                          {g.kanban.id} · {g.code}
+                        </b>
+                        <span className="log-stock-badge">{status.label}</span>
+                      </span>
                       <small>{stockDetail(g)}</small>
                     </span>
-                    <em>
-                      <span className="log-stock-badge">{status.label}</span>
-                    </em>
                   </button>
                 );
               })
