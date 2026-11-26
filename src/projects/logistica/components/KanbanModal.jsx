@@ -1,3 +1,6 @@
+import { ClipboardCheck } from "lucide-react";
+import { STATUS, capacityOf, checkedText, minOf, slotStatus } from "../data/stock.js";
+
 // Inspeção de um kanban: grade de caixas (A–F x 1–10) e editor da caixa selecionada.
 export default function KanbanModal({
   inspected,
@@ -9,6 +12,8 @@ export default function KanbanModal({
   onUpdateSlot,
 }) {
   const selectedSlot = inspected.slots?.find((s) => s.id === selectedSlotId);
+  const now = Date.now();
+  const state = selectedSlot ? slotStatus(selectedSlot, now) : null;
   return (
     <div className="kanban-backdrop" onClick={onClose}>
       <div className="kanban-modal" onClick={(e) => e.stopPropagation()}>
@@ -36,8 +41,11 @@ export default function KanbanModal({
                     " " +
                     (selectedSlotId === slot.id ? "selected" : "") +
                     " " +
-                    (focusedSlotId === slot.id ? "search-hit" : "")
+                    (focusedSlotId === slot.id ? "search-hit" : "") +
+                    " stock-" +
+                    slotStatus(slot, now).status
                   }
+                  title={slot.code ? STATUS[slotStatus(slot, now).status].label : undefined}
                   onClick={() => onSelectSlot(slot.id)}
                 >
                   <b>{slot.id}</b>
@@ -53,6 +61,17 @@ export default function KanbanModal({
                 {viewOnly && <span className="log-eyebrow">MODO VISUALIZAÇÃO · SOMENTE LEITURA</span>}
                 <span className="log-eyebrow">CAIXA {selectedSlot.id}</span>
                 <h3>{selectedSlot.code || "Nova caixa"}</h3>
+                {selectedSlot.code && (
+                  <div className={"log-stock-row tone-" + STATUS[state.status].tone}>
+                    <span className="log-stock-badge">{STATUS[state.status].label}</span>
+                    <small>{checkedText(state.days)}</small>
+                    {!viewOnly && (
+                      <button type="button" onClick={() => onUpdateSlot("check")} title="Registrar que a caixa foi conferida agora">
+                        <ClipboardCheck size={14} /> Conferi agora
+                      </button>
+                    )}
+                  </div>
+                )}
                 <label>
                   Código
                   <input
@@ -79,6 +98,28 @@ export default function KanbanModal({
                     disabled={viewOnly}
                     value={selectedSlot.qty}
                     onChange={(e) => onUpdateSlot("qty", e.target.value)}
+                  />
+                </label>
+                <label>
+                  Capacidade da caixa
+                  <input
+                    type="number"
+                    min="1"
+                    disabled={viewOnly}
+                    value={selectedSlot.capacity ?? ""}
+                    placeholder={String(capacityOf(selectedSlot))}
+                    onChange={(e) => onUpdateSlot("capacity", e.target.value)}
+                  />
+                </label>
+                <label>
+                  Mínimo (avisa "acabando")
+                  <input
+                    type="number"
+                    min="0"
+                    disabled={viewOnly}
+                    value={selectedSlot.min ?? ""}
+                    placeholder={String(minOf(selectedSlot))}
+                    onChange={(e) => onUpdateSlot("min", e.target.value)}
                   />
                 </label>
                 <label>

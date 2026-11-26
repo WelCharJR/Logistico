@@ -6,6 +6,7 @@ import { overviewFor, useHangarScene } from "./hooks/useHangarScene.js";
 import { hallBounds, sanitizeHall } from "./scene/hallSize.js";
 import { ROUTE, buildGrid, rankKanbans, routeSteps } from "./scene/route.js";
 import NavCard from "./components/NavCard.jsx";
+import { STATUS, demoStock, groupResults } from "./data/stock.js";
 import { samplePath } from "./scene/buildDrawn.js";
 import HallSizeCard from "./components/HallSizeCard.jsx";
 import TopBar from "./components/TopBar.jsx";
@@ -70,6 +71,8 @@ export default function Logistica() {
           .map((s) => ({ kanban: k, slot: s })),
       )
     : [];
+  // Busca agrupada por kanban, com a situação do estoque (cheio, acabando, acabou, sem informação).
+  const searchGroups = groupResults(searchResults);
   // Pinos no 3D: kanban selecionado + kanbans com resultado da busca.
   marksRef.current = new Set([selected, ...searchResults.map((r) => r.kanban.id)].filter((id) => layout.kanbans.some((k) => k.id === id)));
   const kanbanPositions = layout.kanbans.map(({ id, x, z, rotation }) => id + ":" + x + ":" + z + ":" + (rotation || 0)).join("|");
@@ -95,12 +98,21 @@ export default function Logistica() {
     return buildGrid(hallBounds(hall), layout.kanbans, roads);
   }, [kanbanPositions, roadsKey, hall.width, hall.depth]); // eslint-disable-line react-hooks/exhaustive-deps
   // Com uma busca ativa, o destino é o kanban mais perto que tem o material.
-  const hitIds = [...new Set(searchResults.map((r) => r.kanban.id))];
-  const navTerm = hitIds.length ? query.trim() : "";
-  const candidatesKey = hitIds.join("|");
+  // Situação do produto em cada kanban (o melhor, se o kanban tiver mais de um código que bate).
+  const stockByKanban = new Map();
+  for (const g of searchGroups)
+    if (!stockByKanban.has(g.kanban.id) || STATUS[g.stock.status].order < STATUS[stockByKanban.get(g.kanban.id)].order)
+      stockByKanban.set(g.kanban.id, g.stock.status);
+  // GPS vai só onde tem o produto; "sem informação" só se nenhum tiver; onde acabou fica de fora.
+  const available = [...stockByKanban].filter(([, st]) => st === "full" || st === "ok" || st === "low").map(([id]) => id);
+  const uncertain = [...stockByKanban].filter(([, st]) => st === "unknown").map(([id]) => id);
+  const hitIds = available.length ? available : uncertain;
+  const skipped = [...stockByKanban].filter(([id]) => !hitIds.includes(id)).map(([id, st]) => ({ id, status: st }));
+  const navTerm = stockByKanban.size ? query.trim() : "";
+  const candidatesKey = navTerm ? "q:" + hitIds.join("|") : "";
   const ranked = useMemo(() => {
     if (!navOpen || !me || locating) return [];
-    const pool = candidatesKey ? layout.kanbans.filter((k) => hitIds.includes(k.id)) : layout.kanbans;
+    const pool = navTerm ? layout.kanbans.filter((k) => hitIds.includes(k.id)) : layout.kanbans;
     return rankKanbans(grid, me, pool);
   }, [navOpen, me, locating, grid, candidatesKey]); // eslint-disable-line react-hooks/exhaustive-deps
   const destination = ranked.find((r) => r.id === destId) || ranked[0] || null;
@@ -147,7 +159,7 @@ export default function Logistica() {
     setMe({ x: end.x, z: end.z });
     setDestId(destination.id);
     // Chegou: com busca ativa, já abre a caixa do material; senão, aproxima do kanban.
-    const hit = searchResults.find((r) => r.kanban.id === destination.id);
+    const hit = searchGroups.find((g) => g.kanban.id === destination.id); // caixa com material, se houver
     if (hit) pickResult(hit.kanban, hit.slot);
     else if (kanban) focusRef.current(kanban.x, kanban.z, 11, ((kanban.rotation || 0) * Math.PI) / 180);
     setNotice("Você chegou ao " + destination.id + (hit ? " · caixa " + hit.slot.id : ""));
@@ -277,9 +289,18 @@ export default function Logistica() {
                   ? slot
                   : {
                       ...slot,
-                      [field]: field === "qty" ? Math.max(0, Number(value) || 0) : value,
-                      ...((field === "code" || field === "name") && value && !slot.qty
-                        ? { qty: 10 }
+                      // "check": só registra a conferência. qty/min/capacity são números;
+                      // mudar a quantidade também conta como conferência (alguém olhou a caixa).
+                      ...(field === "check"
+                        ? { checkedAt: new Date().toISOString() }
+                        : field === "qty"
+                          ? { qty: Math.max(0, Number(value) || 0), checkedAt: new Date().toISOString() }
+                          : field === "min" || field === "capacity"
+                            ? { [field]: value === "" ? undefined : Math.max(field === "capacity" ? 1 : 0, Number(value) || 0) }
+                            : { [field]: value }),
+                      // caixa nova (sem código ainda) começa cheia; uma que acabou continua em 0
+                      ...((field === "code" || field === "name") && value && !slot.code
+                        ? { qty: 10, checkedAt: new Date().toISOString() }
                         : {}),
                     },
               ),
@@ -292,7 +313,7 @@ export default function Logistica() {
     const kanban = layout.kanbans.find((k) => k.id === item.kanbanId);
     const slot = kanban?.slots.find((s) => item.slotId ? s.id === item.slotId && !s.code : !s.code);
     if (!slot) { setNotice("Kanban sem caixas livres."); return; }
-    setLayout((p) => ({ ...p, kanbans: p.kanbans.map((k) => k.id !== kanban.id ? k : { ...k, slots: k.slots.map((s) => s.id !== slot.id ? s : { ...s, code: item.code, name: item.name, qty: item.qty, unit: item.unit }) }) }));
+    setLayout((p) => ({ ...p, kanbans: p.kanbans.map((k) => k.id !== kanban.id ? k : { ...k, slots: k.slots.map((s) => s.id !== slot.id ? s : { ...s, code: item.code, name: item.name, qty: item.qty, unit: item.unit, checkedAt: new Date().toISOString() }) }) }));
     setNotice(item.code + " adicionado em " + kanban.id + " · " + slot.id);
   };
   const renameKanban = (id, name) => {
@@ -493,6 +514,7 @@ export default function Logistica() {
         query={query}
         onQuery={setQuery}
         searchResults={searchResults}
+        searchGroups={searchGroups}
         onPickResult={pickResult}
         notice={notice}
         viewOnly={viewOnly}
@@ -557,6 +579,8 @@ export default function Logistica() {
           walked={walked}
           searchTerm={navTerm}
           hasRoads={grid.hasRoads}
+          stockOf={(id) => stockByKanban.get(id)}
+          skipped={skipped}
           kanbanName={(id) => layout.kanbans.find((k) => k.id === id)?.name || ""}
           onPickPosition={() => setPicking((p) => !p)}
           onChooseDestination={(id) => setDestId(id)}
@@ -575,6 +599,10 @@ export default function Logistica() {
           onRemoveItem={removeItem}
           onExportBackup={exportBackup}
           onImportBackup={importBackup}
+          onDemoStock={() => {
+            setLayout((p) => ({ ...p, kanbans: demoStock(p.kanbans) }));
+            setNotice("Estoque de exemplo aplicado: caixas cheias, acabando, vazias e sem conferência.");
+          }}
           onOpenKanban={(id, slotId) => {
             setInventoryOpen(false);
             openKanban(id, slotId);

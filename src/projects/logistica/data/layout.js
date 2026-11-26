@@ -11,22 +11,34 @@ export const emptySlots = () =>
       unit: "un",
     })),
   );
+// Espalha cada item em caixas de até 10 unidades. checkedDaysAgo: dias desde a última conferência
+// (null = nunca conferido); qty 0 cria uma caixa vazia com o material (acabou).
 function makeSlots(items = []) {
   const slots = emptySlots();
   let next = 0;
   items.forEach((item) => {
-    let remaining = Number(item.qty) || 10;
-    while (remaining > 0 && next < slots.length) {
-      const qty = Math.min(10, remaining);
+    const days = item.checkedDaysAgo === undefined ? 1 : item.checkedDaysAgo;
+    const checkedAt = days === null ? undefined : new Date(Date.now() - days * 86400000).toISOString();
+    const fill = (qty) => {
       slots[next] = {
         ...slots[next],
         code: item.code || "",
         name: item.name || "",
         qty,
         unit: item.unit || "un",
+        ...(checkedAt ? { checkedAt } : {}),
       };
-      remaining -= qty;
       next++;
+    };
+    if (Number(item.qty) === 0) {
+      if (next < slots.length) fill(0);
+      return;
+    }
+    let remaining = Number(item.qty) || 10;
+    while (remaining > 0 && next < slots.length) {
+      const qty = Math.min(10, remaining);
+      fill(qty);
+      remaining -= qty;
     }
   });
   return slots;
@@ -39,8 +51,8 @@ const initial = {
       x: -12,
       z: -5,
       items: [
-        { code: "NAS1097", name: "Rebite escareado", qty: 240, unit: "un" },
-        { code: "MS21042", name: "Porca autofrenante", qty: 80, unit: "un" },
+        { code: "NAS1097", name: "Rebite escareado", qty: 240, unit: "un", checkedDaysAgo: 3 },
+        { code: "MS21042", name: "Porca autofrenante", qty: 80, unit: "un", checkedDaysAgo: 1 },
       ],
     },
     {
@@ -48,14 +60,20 @@ const initial = {
       name: "Montagem fuselagem",
       x: 0,
       z: 4,
-      items: [{ code: "NAS660", name: "Parafuso estrutural", qty: 120, unit: "un" }],
+      items: [
+        { code: "NAS660", name: "Parafuso estrutural", qty: 115, unit: "un", checkedDaysAgo: 2 },
+        { code: "MS21042", name: "Porca autofrenante", qty: 0, unit: "un", checkedDaysAgo: 2 },
+      ],
     },
     {
       id: "K-03",
       name: "Ferramentas",
       x: 12,
       z: -5,
-      items: [{ code: "DR-48", name: "Broca 4.8 mm", qty: 12, unit: "un" }],
+      items: [
+        { code: "DR-48", name: "Broca 4.8 mm", qty: 12, unit: "un", checkedDaysAgo: 4 },
+        { code: "MS21042", name: "Porca autofrenante", qty: 20, unit: "un", checkedDaysAgo: 60 },
+      ],
     },
   ].map(({ items, ...kanban }) => ({ ...kanban, slots: makeSlots(items) })),
   areas: [],

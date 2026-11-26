@@ -1,7 +1,8 @@
 import * as THREE from "three";
 import { COLS, ROWS } from "../constants.js";
 import { COLORS, addBox, mat, roundedBox, textTexture } from "./theme.js";
-import { BIN, CONTENTS_LAYER, binGeometry, contentKind, contentsGeometry, contentsMaterial } from "./binModel.js";
+import { BIN, CONTENTS_LAYER, INSIDE, binGeometry, contentKind, contentsGeometry, contentsMaterial } from "./binModel.js";
+import { slotStatus } from "../data/stock.js";
 
 // Materiais das caixas: azul forte = ocupada, azul claro = vazia.
 export const binMaterials = {
@@ -9,12 +10,38 @@ export const binMaterials = {
   empty: mat("#cfd9f3", { roughness: 0.6, side: THREE.DoubleSide }),
 };
 
-// Peças dentro da caixa: aparecem só nas ocupadas, com o tipo decidido pelo código do material.
+// Etiqueta da frente pela situação do estoque: branca normal, amarela acabando, vermelha acabou,
+// cinza sem informação (ninguém conferiu há mais de 30 dias).
+export const tagMaterials = {
+  normal: mat("#ffffff", { roughness: 0.5 }),
+  low: mat("#f7c33a", { roughness: 0.45, emissive: "#8a5c00", emissiveIntensity: 0.25 }),
+  out: mat("#ef4d53", { roughness: 0.45, emissive: "#7a0d12", emissiveIntensity: 0.25 }),
+  unknown: mat("#6f7888", { roughness: 0.6 }),
+};
+const tagFor = (status) => tagMaterials[status] || tagMaterials.normal;
+
+// Troca o material de uma peça da caixa. Numa estante esmaecida troca só o material-base
+// e pede para o esmaecimento reaplicar a cópia transparente.
+function swapMaterial(mesh, next, bin) {
+  if (!mesh || mesh.userData.baseMat === next || (!mesh.userData.baseMat && mesh.material === next)) return;
+  if (mesh.userData.baseMat && mesh.material !== mesh.userData.baseMat) {
+    mesh.userData.baseMat = next;
+    if (bin.parent) bin.parent.userData.fadeDirty = true;
+  } else mesh.material = mesh.userData.baseMat = next;
+}
+
+// Peças dentro da caixa: aparecem só nas ocupadas e com quantidade; o monte baixa conforme
+// a quantidade (caixa quase vazia = monte raso). O tipo de peça vem do código do material.
 function setContents(bin, slot) {
   const contents = bin.userData.contents;
   if (!contents) return;
-  contents.visible = !!slot?.code;
-  if (!slot?.code) return;
+  const state = slotStatus(slot);
+  contents.visible = !!slot?.code && state.qty > 0;
+  if (!contents.visible) return;
+  // escala só a altura, a partir do fundo da caixa
+  const s = 0.4 + 0.6 * Math.min(1, state.qty / state.capacity);
+  contents.scale.y = s;
+  contents.position.y = INSIDE.floor * (1 - s);
   const kind = contentKind(slot.code);
   if (contents.userData.kind !== kind) {
     contents.userData.kind = kind;
@@ -30,14 +57,8 @@ export function paintBins(slotGroups, kanbans) {
     const crate = bin.userData.crate;
     if (!crate) return;
     setContents(bin, slot);
-    const next = slot?.code ? binMaterials.filled : binMaterials.empty;
-    // Estante esmaecida: troca só o material-base; o esmaecimento reaplica a cópia transparente.
-    if (crate.userData.baseMat && crate.material !== crate.userData.baseMat) {
-      crate.userData.baseMat = next;
-      const rack = bin.parent;
-      if (rack) rack.userData.fadeDirty = true;
-    }
-    else crate.material = crate.userData.baseMat = next;
+    swapMaterial(crate, slot?.code ? binMaterials.filled : binMaterials.empty, bin);
+    swapMaterial(bin.userData.tag, tagFor(slotStatus(slot).status), bin);
   });
 }
 
@@ -83,8 +104,9 @@ export function buildKanban(k) {
         // Porta-etiqueta na frente baixa da caixa.
         const lip = new THREE.Mesh(lipGeo, lipMat);
         lip.position.set(0, -0.16, BIN.depth / 2 + 0.025);
-        const tag = new THREE.Mesh(tagGeo, tagMat);
+        const tag = new THREE.Mesh(tagGeo, slot?.code ? tagFor(slotStatus(slot).status) : tagMat);
         tag.position.set(0, -0.075, BIN.depth / 2 + 0.012);
+        bin.userData.tag = tag;
         const contents = new THREE.Mesh(contentsGeometry("nuts"), contentsMaterial());
         contents.layers.set(CONTENTS_LAYER);
         contents.receiveShadow = true;

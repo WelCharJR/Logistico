@@ -179,6 +179,15 @@ export default function DetailCard({
           <i className="sw empty" /> Caixa vazia
         </li>
         <li>
+          <i className="sw tag-low" /> Etiqueta: acabando
+        </li>
+        <li>
+          <i className="sw tag-out" /> Etiqueta: acabou
+        </li>
+        <li>
+          <i className="sw tag-unknown" /> Sem conferência
+        </li>
+        <li>
           <i className="sw route" /> Rota logística
         </li>
         <li>

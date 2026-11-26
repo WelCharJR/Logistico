@@ -1,8 +1,9 @@
 import { useState } from "react";
-import { Download, Package, Upload, X } from "lucide-react";
+import { Download, FlaskConical, Package, Upload, X } from "lucide-react";
 
 // Gaveta "Materiais": cadastro de itens, backup e lista completa do estoque.
-export default function InventoryDrawer({ layout, viewOnly, onClose, onAddItem, onRemoveItem, onExportBackup, onImportBackup, onOpenKanban }) {
+export default function InventoryDrawer({ layout, viewOnly, onClose, onAddItem, onRemoveItem, onExportBackup, onImportBackup, onDemoStock, onOpenKanban }) {
+  const [confirmDemo, setConfirmDemo] = useState(false);
   const [kanbanId, setKanbanId] = useState(layout.kanbans[0]?.id || "");
   const [code, setCode] = useState("");
   const [name, setName] = useState("");
@@ -110,6 +111,21 @@ export default function InventoryDrawer({ layout, viewOnly, onClose, onAddItem, 
                 }}
               />
             </label>
+          )}
+          {!viewOnly && onDemoStock && (
+            <button
+              type="button"
+              className={"log-btn " + (confirmDemo ? "danger" : "ghost")}
+              onClick={() => {
+                if (!confirmDemo) return setConfirmDemo(true);
+                setConfirmDemo(false);
+                onDemoStock();
+              }}
+              onBlur={() => setConfirmDemo(false)}
+              title="Muda quantidades e datas de conferência para mostrar todas as situações de estoque"
+            >
+              <FlaskConical size={15} /> {confirmDemo ? "Clique de novo para aplicar" : "Simular estoque de exemplo"}
+            </button>
           )}
         </div>
 

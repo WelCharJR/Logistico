@@ -14,6 +14,7 @@ import { createFlight, flightAt } from "../scene/cameraFlight.js";
 import { CONTENTS_LAYER } from "../scene/binModel.js";
 import { createNavigator } from "../scene/buildNavigator.js";
 import { pointAlong } from "../scene/route.js";
+import { STATUS, slotStatus } from "../data/stock.js";
 
 // Cena Three.js do hangar: câmera, luzes, galpão, kanbans, áreas, caminhos e mouse.
 // Só é recriada quando muda a posição dos kanbans, as áreas ou os caminhos (mesmas dependências de antes).
@@ -223,7 +224,10 @@ export function useHangarScene({
       if (!bin) { labelSprite.visible = false; labelKey = ""; return; }
       const item = layoutRef.current.kanbans.find((k) => k.id === bin.userData.kanbanId)?.slots.find((slot) => slot.id === bin.userData.slotId);
       if (!item) return;
-      const key = [bin.userData.kanbanId, item.id, item.code, item.name, item.qty, item.unit].join("|");
+      const state = slotStatus(item);
+      const key = [bin.userData.kanbanId, item.id, item.code, item.name, item.qty, item.unit, state.status].join("|");
+      // cor da situação do estoque (barra lateral e última linha)
+      const toneColor = { green: "#16884a", amber: "#a86b00", red: "#d1343a", gray: "#5d6778" }[STATUS[state.status]?.tone] || "#2f55e4";
       if (key !== labelKey) {
         labelKey = key;
         labelContext.clearRect(0, 0, 512, 144);
@@ -232,7 +236,7 @@ export function useHangarScene({
         labelContext.strokeStyle = "#dfe5ef";
         labelContext.lineWidth = 3;
         labelContext.stroke();
-        labelContext.fillStyle = item.code ? "#2f55e4" : "#aab6cc";
+        labelContext.fillStyle = item.code ? toneColor : "#aab6cc";
         labelContext.beginPath(); labelContext.roundRect(22, 26, 8, 92, 4); labelContext.fill();
         labelContext.textAlign = "left";
         labelContext.fillStyle = "#1d2433";
@@ -241,9 +245,10 @@ export function useHangarScene({
         labelContext.fillStyle = "#5b6578";
         labelContext.font = "500 23px Inter, system-ui, sans-serif";
         labelContext.fillText(item.name || "Sem material cadastrado", 46, 84, 440);
-        labelContext.fillStyle = "#2f55e4";
+        labelContext.fillStyle = item.code ? toneColor : "#2f55e4";
         labelContext.font = "700 20px Inter, system-ui, sans-serif";
-        labelContext.fillText(bin.userData.kanbanId + " · " + item.id + " · " + item.qty + " " + item.unit, 46, 116, 440);
+        const where = bin.userData.kanbanId + " · " + item.id;
+        labelContext.fillText(item.code ? where + " · " + item.qty + " " + item.unit + " · " + STATUS[state.status].label : where, 46, 116, 440);
         labelTexture.needsUpdate = true;
       }
       labelSprite.visible = true;

@@ -1,5 +1,6 @@
 import { ArrowUp, CornerUpLeft, CornerUpRight, Crosshair, Flag, Footprints, LoaderCircle, Play, Route, Square, Waypoints, X } from "lucide-react";
 import { walkSeconds } from "../scene/route.js";
+import { STATUS } from "../data/stock.js";
 
 const meters = (m) => (m < 10 ? m.toFixed(1).replace(".", ",") : Math.round(m)) + " m";
 const duration = (m) => {
@@ -44,6 +45,8 @@ export default function NavCard({
   walked,
   searchTerm,
   hasRoads,
+  stockOf = () => null,
+  skipped = [],
   kanbanName,
   onPickPosition,
   onChooseDestination,
@@ -94,7 +97,13 @@ export default function NavCard({
           </div>
 
           {!route ? (
-            <p className="log-hall-note">{searchTerm ? "Nenhum kanban com esse material tem caminho livre até você." : "Nenhum kanban alcançável no hangar."}</p>
+            <p className="log-hall-note">
+              {searchTerm
+                ? skipped.length
+                  ? "O material acabou em todos os kanbans que o têm."
+                  : "Nenhum kanban com esse material tem caminho livre até você."
+                : "Nenhum kanban alcançável no hangar."}
+            </p>
           ) : (
             <>
               <div className="log-nav-banner" aria-live="polite">
@@ -105,6 +114,7 @@ export default function NavCard({
                   <b>{walking ? stepText({ ...active, distance: now.left }, route.id) : stepText(active, route.id)}</b>
                   <small>
                     {route.id} · {kanbanName(route.id)}
+                    {stockOf(route.id) && " · " + STATUS[stockOf(route.id)].label}
                   </small>
                 </div>
               </div>
@@ -160,19 +170,32 @@ export default function NavCard({
                 </ol>
               )}
 
+              {stockOf(route.id) === "unknown" && (
+                <p className="log-nav-warn tone-gray">Ninguém confere esse kanban há mais de 30 dias: pode não ter mais o material.</p>
+              )}
+              {stockOf(route.id) === "low" && <p className="log-nav-warn tone-amber">O material está acabando nesse kanban.</p>}
+
               {ranked.length > 1 && (
                 <div className="log-nav-others">
                   <small>{searchTerm ? "Outros kanbans com o material" : "Outros kanbans"}</small>
                   {ranked.map((r) => (
                     <button key={r.id} className={r.id === route.id ? "active" : ""} onClick={() => onChooseDestination(r.id)} disabled={walking}>
                       <b>{r.id}</b>
-                      <span>{kanbanName(r.id)}</span>
+                      <span>
+                        {stockOf(r.id) ? <i className={"log-stock-dot tone-" + STATUS[stockOf(r.id)].tone} title={STATUS[stockOf(r.id)].label} /> : null}
+                        {kanbanName(r.id)}
+                      </span>
                       <em>{meters(r.length)}</em>
                     </button>
                   ))}
                 </div>
               )}
             </>
+          )}
+          {skipped.length > 0 && (
+            <p className="log-hall-note">
+              Fora da rota: {skipped.map((s) => s.id + " (" + STATUS[s.status].label.toLowerCase() + ")").join(", ")}.
+            </p>
           )}
           <p className="log-hall-note">
             <Footprints size={12} /> Localização simulada para a demonstração. Num galpão real, a posição viria de QR codes no chão ou

@@ -1,4 +1,5 @@
-import { Boxes, Gauge, LayoutGrid, Package } from "lucide-react";
+import { Boxes, Gauge, LayoutGrid, Package, TriangleAlert } from "lucide-react";
+import { stockAlerts } from "../data/stock.js";
 
 // Indicadores do hangar calculados a partir do layout salvo.
 export default function KpiCards({ layout }) {
@@ -14,10 +15,19 @@ export default function KpiCards({ layout }) {
     { icon: Package, label: "Materiais", value: materials, sub: units.toLocaleString("pt-BR") + " unidades" },
     { icon: LayoutGrid, label: "Kanbans", value: layout.kanbans.length, sub: `${layout.areas.length} áreas · ${layout.paths.length} caminhos` },
   ];
+  // Alertas por caixa: acabando + acabou; "sem conferência" = ninguém confere há mais de 30 dias.
+  const alerts = stockAlerts(layout.kanbans);
+  cards.push({
+    icon: TriangleAlert,
+    label: "Alertas de estoque",
+    value: alerts.low + alerts.out,
+    sub: `${alerts.low} acabando · ${alerts.out} acabou · ${alerts.unknown} sem conferência`,
+    tone: alerts.out ? "red" : alerts.low ? "amber" : alerts.unknown ? "gray" : "",
+  });
   return (
     <div className="log-kpis">
-      {cards.map(({ icon: Icon, label, value, sub, bar }) => (
-        <div className="log-kpi" key={label}>
+      {cards.map(({ icon: Icon, label, value, sub, bar, tone }) => (
+        <div className={"log-kpi" + (tone ? " tone-" + tone : "")} key={label}>
           <span className="log-kpi-icon" aria-hidden="true">
             <Icon size={17} />
           </span>

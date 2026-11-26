@@ -1,11 +1,24 @@
 import { useEffect, useState } from "react";
-import { Boxes, Eye, Grid3x3, Layers, Navigation, Package, Plus, Ruler, Search, X } from "lucide-react";
+import { Boxes, CircleHelp, Eye, Grid3x3, Layers, Navigation, Package, PackageCheck, PackageX, Plus, Ruler, Search, TriangleAlert, X } from "lucide-react";
+import { STATUS, checkedText, countStatus } from "../data/stock.js";
+
+const STATUS_ICON = { full: PackageCheck, ok: PackageCheck, low: TriangleAlert, out: PackageX, unknown: CircleHelp };
+const plural = (n, one, many) => n + " " + (n === 1 ? one : many);
+
+// Detalhe de um kanban na busca: quanto tem e o aviso quando não dá para confiar no número.
+function stockDetail({ stock, unit }) {
+  if (stock.status === "unknown") return checkedText(stock.lastDays) + " · pode não ter mais";
+  if (stock.status === "out") return "Caixa vazia · " + checkedText(stock.lastDays);
+  const stale = stock.staleBoxes ? " · " + plural(stock.staleBoxes, "caixa sem conferência", "caixas sem conferência") : "";
+  return stock.qty + " " + (unit || "un") + " em " + plural(stock.boxes - stock.staleBoxes, "caixa", "caixas") + stale;
+}
 
 // Barra superior: marca, busca de material, mensagem de status, relógio e ações de camada.
 export default function TopBar({
   query,
   onQuery,
   searchResults,
+  searchGroups = [],
   onPickResult,
   notice,
   viewOnly,
@@ -58,27 +71,33 @@ export default function TopBar({
         )}
         {query.trim() && (
           <div className="log-search-results">
-            <span className="log-eyebrow">
-              {searchResults.length ? `${searchResults.length} resultado${searchResults.length > 1 ? "s" : ""}` : "Sem resultados"}
-            </span>
-            {searchResults.length ? (
-              searchResults.slice(0, 8).map(({ kanban, slot }) => (
-                <button key={kanban.id + "-" + slot.id} onMouseDown={(e) => e.preventDefault()} onClick={() => onPickResult(kanban, slot)}>
-                  <span className="log-result-icon">
-                    <Package size={15} />
-                  </span>
-                  <span>
-                    <b>{slot.code}</b>
-                    <small>{slot.name || "Sem descrição"}</small>
-                  </span>
-                  <em>
-                    {kanban.id} · {slot.id}
-                    <small>
-                      {slot.qty} {slot.unit}
-                    </small>
-                  </em>
-                </button>
-              ))
+            <SearchSummary results={searchResults} groups={searchGroups} />
+            {searchGroups.length ? (
+              searchGroups.slice(0, 10).map((g) => {
+                const Icon = STATUS_ICON[g.stock.status] || Package;
+                const status = STATUS[g.stock.status];
+                return (
+                  <button
+                    key={g.kanban.id + "-" + g.code}
+                    className={"tone-" + status.tone}
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => onPickResult(g.kanban, g.slot)}
+                  >
+                    <span className="log-result-icon">
+                      <Icon size={15} />
+                    </span>
+                    <span>
+                      <b>
+                        {g.kanban.id} · {g.code}
+                      </b>
+                      <small>{stockDetail(g)}</small>
+                    </span>
+                    <em>
+                      <span className="log-stock-badge">{status.label}</span>
+                    </em>
+                  </button>
+                );
+              })
             ) : (
               <small className="log-empty">Nenhum material encontrado.</small>
             )}
@@ -129,5 +148,33 @@ export default function TopBar({
         )}
       </div>
     </header>
+  );
+}
+
+// Topo da busca: "MS21042 em 3 kanbans" + contagem por situação.
+function SearchSummary({ results, groups }) {
+  if (!results.length) return <span className="log-eyebrow">Sem resultados</span>;
+  const codes = new Set(groups.map((g) => g.code));
+  const counts = countStatus(groups);
+  const parts = [
+    [counts.full + counts.ok, "com estoque", "green"],
+    [counts.low, "acabando", "amber"],
+    [counts.unknown, "sem informação", "gray"],
+    [counts.out, "acabou", "red"],
+  ].filter(([n]) => n);
+  return (
+    <div className="log-search-summary">
+      <span className="log-eyebrow">
+        {codes.size === 1 ? [...codes][0] + " em " + plural(groups.length, "kanban", "kanbans") : plural(groups.length, "resultado", "resultados")}
+      </span>
+      <div>
+        {parts.map(([n, label, tone]) => (
+          <span key={label} className={"log-stock-badge tone-" + tone}>
+            {n} {label}
+          </span>
+        ))}
+      </div>
+      {counts.unknown > 0 && <small>Onde está "sem informação", ninguém conferiu há mais de 30 dias: confira antes de ir.</small>}
+    </div>
   );
 }
