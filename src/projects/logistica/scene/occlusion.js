@@ -18,20 +18,26 @@ function samplePoints(target) {
   return [center, center.clone().addScaledVector(axis, 2.2), center.clone().addScaledVector(axis, -2.2)];
 }
 
+// Ids das estantes que contêm o ponto (no piso ou acima dele).
+export function ownersOf(target, racks) {
+  const owners = new Set();
+  racks.forEach((r) => {
+    inverse.copy(r.matrixWorld).invert();
+    if (RACK_BOX.containsPoint(point.copy(target).setY(1).applyMatrix4(inverse))) owners.add(r.userData.id);
+  });
+  return owners;
+}
+
 // Devolve os ids das estantes que ficam na frente de algum alvo, vistas da câmera.
 // `targets`: estantes (THREE.Object3D com userData.id) ou pontos (THREE.Vector3).
-export function findOccluders(cameraPosition, targets, racks) {
+// `keep`: estantes que nunca esmaecem (a que está em foco), mesmo tapando outro alvo.
+export function findOccluders(cameraPosition, targets, racks, keep = new Set()) {
   const occluders = new Set();
   targets.forEach((target) => {
-    const ownerIds = new Set(target.isVector3 ? [] : [target.userData.id]);
+    // Um ponto dentro de uma estante pertence a ela: essa não deve sumir.
+    const ownerIds = target.isVector3 ? ownersOf(target, racks) : new Set([target.userData.id]);
+    keep.forEach((id) => ownerIds.add(id));
     const samples = samplePoints(target);
-    if (target.isVector3) {
-      // Um ponto dentro de uma estante pertence a ela: essa não deve sumir.
-      racks.forEach((r) => {
-        inverse.copy(r.matrixWorld).invert();
-        if (RACK_BOX.containsPoint(point.copy(target).setY(1).applyMatrix4(inverse))) ownerIds.add(r.userData.id);
-      });
-    }
     samples.forEach((sample) => {
       const distance = cameraPosition.distanceTo(sample);
       ray.set(cameraPosition, sample.clone().sub(cameraPosition).normalize());

@@ -6,7 +6,7 @@ import { buildProps } from "../scene/buildProps.js";
 import { createPins } from "../scene/buildPins.js";
 import { COLORS, disposeTree } from "../scene/theme.js";
 import { HALL_DEFAULT, hallBounds } from "../scene/hallSize.js";
-import { disposeFadeClones, findOccluders, setRackOpacity } from "../scene/occlusion.js";
+import { disposeFadeClones, findOccluders, ownersOf, setRackOpacity } from "../scene/occlusion.js";
 import { buildAreaMesh, buildPath } from "../scene/buildDrawn.js";
 import { createPreview } from "../scene/createPreview.js";
 import { createHoverFx } from "../scene/createHoverFx.js";
@@ -39,7 +39,7 @@ export function useHangarScene({
   refs,
   setters,
 }) {
-  const { toolRef, draftRef, pathTypeRef, snapRef, layerRefs, clearPreviewRef, zoomRef, focusRef, viewRef, viewOnlyRef, marksRef, openSlotRef, navRef } =
+  const { toolRef, draftRef, pathTypeRef, snapRef, layerRefs, clearPreviewRef, zoomRef, focusRef, viewRef, viewOnlyRef, marksRef, openSlotRef, navRef, selectedRef } =
     refs;
   const {
     setLayout,
@@ -465,8 +465,17 @@ export function useHangarScene({
     const focusPoint = new THREE.Vector3();
     const updateOcclusion = (damping) => {
       const targets = [...(marksRef?.current || [])].map((id) => kanbanMeshes.get(id)).filter(Boolean);
-      if (controls.radius < 30) targets.push(focusPoint.copy(controls.target));
-      const hidden = targets.length ? findOccluders(camera.position, targets, racks) : new Set();
+      // Durante um voo, o ponto mirado passa por trás da estante de destino: usa o destino final,
+      // senão a própria estante em foco "tapa" o ponto e esmaece.
+      const to = controls.flight?.to;
+      const near = (to ? to.radius : controls.radius) < 30;
+      if (to) focusPoint.set(to.x, to.y ?? 0, to.z);
+      else focusPoint.copy(controls.target);
+      if (near) targets.push(focusPoint);
+      // Nunca esmaecem: o kanban selecionado e a estante onde a câmera está mirando.
+      const keep = near ? ownersOf(focusPoint, racks) : new Set();
+      if (selectedRef?.current) keep.add(selectedRef.current);
+      const hidden = targets.length ? findOccluders(camera.position, targets, racks, keep) : new Set();
       racks.forEach((g) => {
         if (g.userData.id === controls.dragging) hidden.delete(g.userData.id);
         g.userData.fadeGoal = hidden.has(g.userData.id) ? 0.16 : 1;

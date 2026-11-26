@@ -62,6 +62,8 @@ export default function Logistica() {
   const marksRef = useRef(new Set());
   // Pedido para abrir uma caixa no 3D (resultado da busca); a cena atende no próximo quadro.
   const openSlotRef = useRef(null);
+  // Kanban selecionado: a cena nunca esmaece essa estante.
+  const selectedRef = useRef(null);
   // GPS: a cena lê rota/posição/caminhada daqui a cada quadro.
   const navRef = useRef({});
   const term = query.trim().toLocaleLowerCase();
@@ -75,6 +77,7 @@ export default function Logistica() {
   // Busca agrupada por kanban, com a situação do estoque (cheio, acabando, acabou, sem informação).
   const searchGroups = groupResults(searchResults);
   // Pinos no 3D: kanban selecionado + kanbans com resultado da busca.
+  selectedRef.current = selected;
   marksRef.current = new Set([selected, ...searchResults.map((r) => r.kanban.id)].filter((id) => layout.kanbans.some((k) => k.id === id)));
   const kanbanPositions = layout.kanbans.map(({ id, x, z, rotation }) => id + ":" + x + ":" + z + ":" + (rotation || 0)).join("|");
 
@@ -211,6 +214,7 @@ export default function Logistica() {
       marksRef,
       openSlotRef,
       navRef,
+      selectedRef,
     },
     setters: {
       setLayout,
