@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Boxes, Eye, Grid3x3, Layers, Package, Plus, Ruler, Search, X } from "lucide-react";
+import { Boxes, Eye, Grid3x3, Layers, Navigation, Package, Plus, Ruler, Search, X } from "lucide-react";
 
 // Barra superior: marca, busca de material, mensagem de status, relógio e ações de camada.
 export default function TopBar({
@@ -18,6 +18,8 @@ export default function TopBar({
   onOpenInventory,
   onOpenHall,
   hallOpen,
+  onOpenNav,
+  navOpen,
 }) {
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
@@ -114,6 +116,9 @@ export default function TopBar({
             <Ruler size={17} />
           </button>
         )}
+        <button className={"log-btn ghost" + (navOpen ? " on" : "")} onClick={onOpenNav} aria-pressed={navOpen} title="Rota até o kanban mais perto (GPS)">
+          <Navigation size={16} /> <span>Rota</span>
+        </button>
         <button className="log-btn ghost" onClick={onOpenInventory}>
           <Package size={16} /> <span>Materiais</span>
         </button>

@@ -1,9 +1,11 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import "./logistica.css";
 import { COLS, KEY, ROWS, pathTypes } from "./constants.js";
 import { emptySlots, loadLayout } from "./data/layout.js";
 import { overviewFor, useHangarScene } from "./hooks/useHangarScene.js";
-import { sanitizeHall } from "./scene/hallSize.js";
+import { hallBounds, sanitizeHall } from "./scene/hallSize.js";
+import { ROUTE, buildGrid, rankKanbans, routeSteps } from "./scene/route.js";
+import NavCard from "./components/NavCard.jsx";
 import HallSizeCard from "./components/HallSizeCard.jsx";
 import TopBar from "./components/TopBar.jsx";
 import ScenePanel from "./components/ScenePanel.jsx";
@@ -57,6 +59,8 @@ export default function Logistica() {
   const marksRef = useRef(new Set());
   // Pedido para abrir uma caixa no 3D (resultado da busca); a cena atende no próximo quadro.
   const openSlotRef = useRef(null);
+  // GPS: a cena lê rota/posição/caminhada daqui a cada quadro.
+  const navRef = useRef({});
   const term = query.trim().toLocaleLowerCase();
   const searchResults = term
     ? layout.kanbans.flatMap((k) =>
@@ -68,6 +72,98 @@ export default function Logistica() {
   // Pinos no 3D: kanban selecionado + kanbans com resultado da busca.
   marksRef.current = new Set([selected, ...searchResults.map((r) => r.kanban.id)].filter((id) => layout.kanbans.some((k) => k.id === id)));
   const kanbanPositions = layout.kanbans.map(({ id, x, z, rotation }) => id + ":" + x + ":" + z + ":" + (rotation || 0)).join("|");
+
+  // ---------- GPS (demonstração) ----------
+  // A localização é simulada: começa na entrada do hangar e pode ser trocada clicando no chão.
+  const DEMO_SPEED = 3; // a caminhada anima 3x mais rápido que o passo real
+  const [navOpen, setNavOpen] = useState(false);
+  const [locating, setLocating] = useState(false);
+  const [me, setMe] = useState(null);
+  const [picking, setPicking] = useState(false);
+  const [destId, setDestId] = useState(null);
+  const [walk, setWalk] = useState(null);
+  const [walked, setWalked] = useState(0);
+  const skipFitRef = useRef(false); // na chegada a câmera vai até a caixa, sem reenquadrar a rota
+  const hall = sanitizeHall(layout.hall);
+  const grid = useMemo(() => buildGrid(hallBounds(hall), layout.kanbans), [kanbanPositions, hall.width, hall.depth]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Com uma busca ativa, o destino é o kanban mais perto que tem o material.
+  const hitIds = [...new Set(searchResults.map((r) => r.kanban.id))];
+  const navTerm = hitIds.length ? query.trim() : "";
+  const candidatesKey = hitIds.join("|");
+  const ranked = useMemo(() => {
+    if (!navOpen || !me || locating) return [];
+    const pool = candidatesKey ? layout.kanbans.filter((k) => hitIds.includes(k.id)) : layout.kanbans;
+    return rankKanbans(grid, me, pool);
+  }, [navOpen, me, locating, grid, candidatesKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  const destination = ranked.find((r) => r.id === destId) || ranked[0] || null;
+  const steps = useMemo(() => (destination ? routeSteps(destination.points) : []), [destination]);
+  const entrance = () => {
+    const b = hallBounds(hall);
+    return { x: b.maxX - 9, z: b.maxZ - 2.5 }; // abertura da mureta, no canto direito da frente
+  };
+  const openNav = () => {
+    setHallOpen(false);
+    setNavOpen(true);
+    setWalk(null);
+    setLocating(true);
+    // "Procurando sinal": um instante de espera deixa a demonstração com cara de GPS.
+    setTimeout(() => {
+      setMe((prev) => prev || entrance());
+      setLocating(false);
+    }, 1200);
+  };
+  const closeNav = () => {
+    setNavOpen(false);
+    setPicking(false);
+    setWalk(null);
+    setDestId(null);
+  };
+  const fitRoute = (points) => {
+    const xs = points.map((p) => p.x),
+      zs = points.map((p) => p.z);
+    const extent = Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...zs) - Math.min(...zs));
+    focusRef.current((Math.max(...xs) + Math.min(...xs)) / 2, (Math.max(...zs) + Math.min(...zs)) / 2, Math.min(70, Math.max(24, extent * 1.75)), 0.63);
+  };
+  const startWalk = () => {
+    if (!destination) return;
+    setPicking(false);
+    setWalked(0);
+    setWalk({ startedAt: performance.now(), speed: ROUTE.walkSpeed * DEMO_SPEED });
+  };
+  const arrive = () => {
+    if (!destination) return;
+    const end = destination.points[destination.points.length - 1];
+    const kanban = layout.kanbans.find((k) => k.id === destination.id);
+    setWalk(null);
+    skipFitRef.current = true;
+    setMe({ x: end.x, z: end.z });
+    setDestId(destination.id);
+    // Chegou: com busca ativa, já abre a caixa do material; senão, aproxima do kanban.
+    const hit = searchResults.find((r) => r.kanban.id === destination.id);
+    if (hit) pickResult(hit.kanban, hit.slot);
+    else if (kanban) focusRef.current(kanban.x, kanban.z, 11, ((kanban.rotation || 0) * Math.PI) / 180);
+    setNotice("Você chegou ao " + destination.id + (hit ? " · caixa " + hit.slot.id : ""));
+  };
+  navRef.current = {
+    me: navOpen && !locating ? me : null,
+    route: navOpen && destination ? destination.points : null,
+    walk: navOpen ? walk : null,
+    picking: navOpen && picking,
+    onPick: (point) => {
+      setMe(point);
+      setPicking(false);
+      setWalk(null);
+    },
+    onProgress: setWalked,
+    onArrive: arrive,
+  };
+  // Destino novo: marca o kanban (pino) e enquadra a rota inteira.
+  useEffect(() => {
+    if (!navOpen || !destination || walk) return;
+    setSelected(destination.id);
+    if (skipFitRef.current) skipFitRef.current = false;
+    else fitRoute(destination.points);
+  }, [navOpen, destination?.id, me]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     localStorage.setItem(KEY, JSON.stringify(layout));
@@ -92,6 +188,7 @@ export default function Logistica() {
       viewOnlyRef,
       marksRef,
       openSlotRef,
+      navRef,
     },
     setters: {
       setLayout,
@@ -397,8 +494,13 @@ export default function Logistica() {
         onToggleStructure={() => toggleLayer("structure", setShowStructure, showStructure)}
         onAddKanban={addKanban}
         onOpenInventory={() => setInventoryOpen(true)}
-        onOpenHall={() => setHallOpen((open) => !open)}
+        onOpenHall={() => {
+          setHallOpen((open) => !open);
+          setNavOpen(false);
+        }}
         hallOpen={hallOpen}
+        onOpenNav={() => (navOpen ? closeNav() : openNav())}
+        navOpen={navOpen}
       />
       <ScenePanel
         canvasRef={canvas}
@@ -434,6 +536,25 @@ export default function Logistica() {
         <TrackCard layout={layout} selected={selected} selectedSlotId={selectedSlotId} onOpenKanban={openKanban} />
         <ListCard layout={layout} selected={selected} onPick={pickFromList} />
       </div>
+      {navOpen && (
+        <NavCard
+          locating={locating}
+          me={me}
+          picking={picking}
+          ranked={ranked}
+          destination={destination}
+          steps={steps}
+          walking={!!walk}
+          walked={walked}
+          searchTerm={navTerm}
+          kanbanName={(id) => layout.kanbans.find((k) => k.id === id)?.name || ""}
+          onPickPosition={() => setPicking((p) => !p)}
+          onChooseDestination={(id) => setDestId(id)}
+          onStart={startWalk}
+          onStop={() => setWalk(null)}
+          onClose={closeNav}
+        />
+      )}
       {hallOpen && !viewOnly && <HallSizeCard layout={layout} onApply={applyHall} onClose={() => setHallOpen(false)} />}
       {inventoryOpen && (
         <InventoryDrawer

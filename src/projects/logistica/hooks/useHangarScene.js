@@ -12,6 +12,8 @@ import { createPreview } from "../scene/createPreview.js";
 import { createHoverFx } from "../scene/createHoverFx.js";
 import { createFlight, flightAt } from "../scene/cameraFlight.js";
 import { CONTENTS_LAYER } from "../scene/binModel.js";
+import { createNavigator } from "../scene/buildNavigator.js";
+import { pointAlong } from "../scene/route.js";
 
 // Cena Three.js do hangar: câmera, luzes, galpão, kanbans, áreas, caminhos e mouse.
 // Só é recriada quando muda a posição dos kanbans, as áreas ou os caminhos (mesmas dependências de antes).
@@ -36,7 +38,7 @@ export function useHangarScene({
   refs,
   setters,
 }) {
-  const { toolRef, draftRef, pathTypeRef, snapRef, layerRefs, clearPreviewRef, zoomRef, focusRef, viewRef, viewOnlyRef, marksRef, openSlotRef } =
+  const { toolRef, draftRef, pathTypeRef, snapRef, layerRefs, clearPreviewRef, zoomRef, focusRef, viewRef, viewOnlyRef, marksRef, openSlotRef, navRef } =
     refs;
   const {
     setLayout,
@@ -288,6 +290,13 @@ export function useHangarScene({
       const screen = updatePointer(e);
       setCursorScreen(screen);
       raycaster.setFromCamera(pointer, camera);
+      // GPS: escolhendo "minha posição" — o clique no chão vira a localização.
+      if (navRef?.current?.picking && raycaster.ray.intersectPlane(plane, hit)) {
+        navRef.current.onPick?.({ x: hit.x, z: hit.z });
+        controls.down = false;
+        clickStart = null;
+        return;
+      }
       if (!viewOnlyRef.current && (toolRef.current === "area" || toolRef.current === "path")) {
         if (raycaster.ray.intersectPlane(plane, hit)) {
           const point = snapPoint(hit.x, hit.z);
@@ -343,7 +352,7 @@ export function useHangarScene({
             updateLabel(hoveredSlot);
           }
           hoverFx.hover(hoveredSlot, performance.now());
-          renderer.domElement.style.cursor = hoveredSlot ? "pointer" : "grab";
+          renderer.domElement.style.cursor = navRef?.current?.picking ? "crosshair" : hoveredSlot ? "pointer" : "grab";
         }
         if (toolRef.current === "area" || toolRef.current === "path") {
           hoverFx.hover(null, performance.now());
@@ -440,6 +449,11 @@ export function useHangarScene({
       hoverFx.open(best, time);
     };
     const pins = createPins(scene, kanbanMeshes, { reducedMotion });
+    const navigator = createNavigator(scene, { reducedMotion });
+    // Estado do GPS já desenhado (para só refazer a faixa quando a rota muda).
+    let navRoute = null,
+      navLastProgress = 0,
+      navArrived = null;
     // Esmaecimento: estantes entre a câmera e o que está em foco (selecionada, resultado da busca
     // ou o ponto que a câmera mira quando está perto) ficam translúcidas.
     const racks = [...kanbanMeshes.values()];
@@ -507,6 +521,31 @@ export function useHangarScene({
       racks.forEach((g) => g.updateMatrixWorld());
       updateOcclusion(damping);
       pins.update(time, marksRef?.current || noMarks, camera);
+      const nav = navRef?.current;
+      if (nav) {
+        if (nav.route !== navRoute) {
+          navRoute = nav.route;
+          navigator.setRoute(navRoute, time);
+        }
+        let pose = nav.me;
+        if (nav.walk && navRoute) {
+          // Caminhada: o ponto "você" percorre a rota; o app recebe o progresso e a chegada.
+          const walked = Math.max(0, ((time - nav.walk.startedAt) / 1000) * nav.walk.speed);
+          pose = pointAlong(navRoute, walked);
+          if (time - navLastProgress > 120 || pose.done) {
+            navLastProgress = time;
+            nav.onProgress?.(walked);
+          }
+          if (pose.done && navArrived !== nav.walk) {
+            navArrived = nav.walk;
+            nav.onArrive?.();
+          }
+        } else if (pose && navRoute?.length > 1) {
+          pose = { ...pose, heading: Math.atan2(navRoute[1].x - navRoute[0].x, navRoute[1].z - navRoute[0].z) };
+        }
+        navigator.setMe(pose);
+      }
+      navigator.update(time, camera);
       renderer.render(scene, camera);
     };
     renderer.setAnimationLoop(draw);
@@ -522,6 +561,7 @@ export function useHangarScene({
       renderer.domElement.removeEventListener("dblclick", onDoubleClick);
       renderer.domElement.removeEventListener("pointercancel", onUp);
       hoverFx.dispose();
+      navigator.dispose();
       timer.dispose();
       scene.remove(labelSprite);
       labelTexture.dispose();
