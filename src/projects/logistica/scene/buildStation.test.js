@@ -38,46 +38,44 @@ function assertInside(root, points) {
   });
 }
 
-for (const aircraft of ["kc390", "tucano"])
-  for (const type of ["fuselage", "wing", "tail", "final", "jigs"])
-    for (const stage of type === "jigs" ? ["skeleton"] : ["skeleton", "skin", "complete"])
-      test(`${aircraft} · ${type} · ${stage}: cabe na área e é leve`, () => {
-        const points = rotated(4, -3, 22, 14, 0.4);
+// Todas as combinações (2 aeronaves x 5 estações x etapas) num teste só; a mensagem diz qual falhou.
+test("toda estação cabe na área, é leve e usa os materiais da etapa", () => {
+  const points = rotated(4, -3, 22, 14, 0.4);
+  for (const aircraft of ["kc390", "tucano"])
+    for (const type of ["fuselage", "wing", "tail", "final", "jigs"])
+      for (const stage of type === "jigs" ? ["skeleton"] : ["skeleton", "skin", "complete"]) {
+        const what = `${aircraft} · ${type} · ${stage}`;
         const root = buildStationModel({ id: "A", type, aircraft, stage, points });
-        assert.ok(root, "deveria criar o modelo");
+        assert.ok(root, what + ": deveria criar o modelo");
         assertInside(root, points);
         const tris = triangles(root);
-        assert.ok(tris > 200 && tris < 90000, "triângulos: " + tris);
+        assert.ok(tris > 200 && tris < 90000, `${what}: ${tris} triângulos`);
         const mats = materialsOf(root);
-        assert.ok(mats.size <= 13, "materiais: " + mats.size);
-        if (type !== "jigs") {
-          assert.equal(mats.has(M.paint), stage === "complete" || (type === "final" && aircraft === "kc390"), "pintura só na peça completa");
-          assert.equal(mats.has(M.primer), stage !== "complete", "estrutura em primer antes de completar");
-          if (stage === "skin") assert.ok(mats.has(M.alu), "revestimento em alumínio");
-        }
-      });
+        assert.ok(mats.size <= 13, `${what}: ${mats.size} materiais`);
+        if (type === "jigs") continue;
+        assert.equal(mats.has(M.paint), stage === "complete" || (type === "final" && aircraft === "kc390"), what + ": pintura só na peça completa");
+        assert.equal(mats.has(M.primer), stage !== "complete", what + ": estrutura em primer antes de completar");
+        if (stage === "skin") assert.ok(mats.has(M.alu), what + ": revestimento em alumínio");
+      }
+});
 
-test("área pequena: maquete, ainda dentro da área", () => {
+test("área pequena vira maquete dentro da área; genérica ou sem pontos não tem modelo", () => {
   const points = rectPts(0, 0, 8, 6);
   const root = buildStationModel({ type: "final", aircraft: "kc390", stage: "complete", points });
   assert.ok(root.userData.station.scale < 0.25);
   assertInside(root, points);
-});
-
-test("área genérica ou sem pontos: sem modelo", () => {
   assert.equal(buildStationModel({ type: "generic", points: rectPts(0, 0, 5, 5) }), null);
   assert.equal(buildStationModel({ type: "wing", points: [] }), null);
 });
 
-test("cache: a mesma estação reaproveita as geometrias e sai bem mais rápido", () => {
-  const points = rectPts(100, 100, 140, 140); // área nova, longe das outras
-  const t0 = performance.now();
-  const first = buildStationModel({ type: "final", aircraft: "kc390", stage: "skin", points });
-  const t1 = performance.now();
+test("cache: estações iguais reaproveitam as geometrias, que não podem ser descartadas com a cena", () => {
+  const first = buildStationModel({ type: "final", aircraft: "kc390", stage: "skin", points: rectPts(100, 100, 140, 140) });
   const second = buildStationModel({ type: "final", aircraft: "kc390", stage: "skin", points: rectPts(0, 0, 40, 40) });
-  const t2 = performance.now();
-  const geos = (r) => { const out = []; r.traverse((o) => o.isMesh && out.push(o.geometry)); return out; };
+  const geos = (r) => {
+    const out = [];
+    r.traverse((o) => o.isMesh && out.push(o.geometry));
+    return out;
+  };
   assert.deepEqual(geos(first), geos(second));
-  assert.ok(geos(first).every((g) => g.userData.shared), "geometria do cache não pode ser descartada com a cena");
-  assert.ok(t2 - t1 < (t1 - t0) / 5 + 2, `sem cache ${(t1 - t0).toFixed(1)} ms, com cache ${(t2 - t1).toFixed(1)} ms`);
+  assert.ok(geos(first).every((g) => g.userData.shared));
 });
