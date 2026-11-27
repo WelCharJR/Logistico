@@ -258,6 +258,7 @@ function splitRuns(grid, cells, from) {
 
 // Pontos onde a pessoa para: à frente das duas faces da estante (frente e verso têm caixas).
 export function accessPoints(k) {
+  if (k.access) return k.access.map((p) => ({ ...p, face: "side" })); // destino com pontos próprios (estações)
   const r = ((k.rotation || 0) * Math.PI) / 180;
   const nx = Math.sin(r),
     nz = Math.cos(r); // +z local da estante no mundo

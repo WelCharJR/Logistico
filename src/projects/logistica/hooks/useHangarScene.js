@@ -17,7 +17,10 @@ import { CONTENTS_LAYER } from "../scene/binModel.js";
 import { createNavigator } from "../scene/buildNavigator.js";
 import { pointAlong } from "../scene/route.js";
 import { STATUS, slotStatus } from "../data/stock.js";
-import { clampCenter, moveArea } from "../scene/stationLayout.js";
+import { clampCenter, moveArea, orientedRect, sanitizeArea } from "../scene/stationLayout.js";
+import { flowLinks, stationState, supplyLinks } from "../data/stationStatus.js";
+import { buildSupply } from "../scene/buildSupply.js";
+import { buildFlow } from "../scene/buildFlow.js";
 
 // Cena Three.js do hangar: câmera, luzes, galpão, kanbans, áreas, caminhos e mouse.
 // Só é recriada quando muda a posição dos kanbans, as áreas ou os caminhos (mesmas dependências de antes).
@@ -37,6 +40,7 @@ export function useHangarScene({
   canvas,
   layout,
   kanbanPositions,
+  selectedId = null,
   showStructure,
   showGrid,
   refs,
@@ -73,9 +77,14 @@ export function useHangarScene({
   useEffect(() => {
     sceneApiRef.current?.placeKanbans(layout.kanbans);
   }, [kanbanPositions]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Área selecionada: linhas de abastecimento dos kanbans que têm os materiais dela.
+  useEffect(() => {
+    sceneApiRef.current?.showSupply(selectedId);
+  }, [selectedId, slotsKey, layout.areas, kanbanPositions]); // eslint-disable-line react-hooks/exhaustive-deps
+  // slotsKey também: uma caixa que acaba pode deixar uma estação "aguardando material".
   useEffect(() => {
     sceneApiRef.current?.syncDrawn(layout.areas, layout.paths);
-  }, [layout.areas, layout.paths]);
+  }, [layout.areas, layout.paths, slotsKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const hallKey = (layout.hall?.width || "") + "x" + (layout.hall?.depth || "");
   useEffect(() => {
@@ -154,9 +163,13 @@ export function useHangarScene({
     // Área = piso colorido + faixa zebrada/nome/andon + estação (gabarito e peça), num grupo só:
     // clicar em qualquer parte seleciona a área.
     const drawnById = new Map(); // "area:A-1" -> { key, root }
+    const blinking = new Set(); // luzes do andon que piscam (amarela/vermelha)
+    let flow = null,
+      flowKey = "";
     const removeDrawn = (id) => {
       const entry = drawnById.get(id);
       if (!entry) return;
+      entry.root.traverse((o) => blinking.delete(o));
       scene.remove(entry.root);
       disposeTree(entry.root);
       drawnMeshes.splice(drawnMeshes.indexOf(entry.root), 1);
@@ -168,20 +181,25 @@ export function useHangarScene({
       removeDrawn(id);
       const root = build();
       if (!root) return;
+      root.traverse((o) => o.userData.blink && blinking.add(o));
       scene.add(root);
       drawnMeshes.push(root);
       drawnById.set(id, { key, root });
     };
     const syncDrawn = (areas, paths) => {
       const seen = new Set();
+      const kanbans = layoutRef.current.kanbans;
       areas.forEach((area) => {
         const id = "area:" + area.id;
         seen.add(id);
-        putDrawn(id, JSON.stringify([area.points, area.type, area.aircraft, area.stage, area.name]), () => {
+        const a = sanitizeArea(area);
+        const state = stationState(area, kanbans);
+        // refaz a área só se mudar algo que aparece: forma, peça, etapa, nome, progresso ou andon
+        putDrawn(id, JSON.stringify([a.points, a.type, a.aircraft, a.stage, a.name, Math.round(a.progress), state.status]), () => {
           const root = new THREE.Group();
           root.userData.id = area.id;
           root.userData.kind = "area";
-          root.add(buildAreaMesh(area), buildAreaDecor(area));
+          root.add(buildAreaMesh(area), buildAreaDecor(area, state));
           const station = buildStationModel(area);
           if (station) root.add(station);
           return root;
@@ -194,10 +212,43 @@ export function useHangarScene({
         putDrawn(id, JSON.stringify(path), () => buildPath(path));
       });
       [...drawnById.keys()].filter((id) => !seen.has(id)).forEach(removeDrawn);
+      // setas do fluxo da linha (fuselagem/asa/cauda -> montagem final)
+      const links = flowLinks(areas);
+      const key = JSON.stringify([links, links.flatMap((l) => [l.from, l.to]).map((lid) => areas.find((x) => x.id === lid)?.points)]);
+      if (key !== flowKey) {
+        flowKey = key;
+        if (flow) {
+          scene.remove(flow.group);
+          flow.dispose();
+        }
+        flow = links.length ? buildFlow(areas, links, { reducedMotion }) : null;
+        if (flow) scene.add(flow.group);
+      }
     };
     syncDrawn(layout.areas, layout.paths);
     const drawnRoot = (id) => drawnById.get("area:" + id)?.root;
+    let supply = null;
+    const showSupply = (id) => {
+      if (supply) {
+        scene.remove(supply.group);
+        supply.dispose();
+        supply = null;
+      }
+      const area = id && layoutRef.current.areas.find((a) => a.id === id);
+      if (!area) return;
+      const links = supplyLinks(area, layoutRef.current.kanbans);
+      if (!links.length) return;
+      const r = orientedRect(area.points);
+      supply = buildSupply(links, {
+        from: (kid) => kanbanMeshes.get(kid)?.position,
+        to: { x: r.cx, z: r.cz },
+        reducedMotion,
+      });
+      scene.add(supply.group);
+    };
+    showSupply(selectedRef?.current);
     sceneApiRef.current = {
+      showSupply,
       syncDrawn,
       // mover/girar kanban: só reposiciona a estante (a que está sendo arrastada fica com o mouse)
       placeKanbans: (kanbans) =>
@@ -699,6 +750,13 @@ export function useHangarScene({
         navigator.setMe(pose);
       }
       navigator.update(time, camera);
+      flow?.update(time);
+      supply?.update(time);
+      if (blinking.size) {
+        // andon piscando devagar (aceso/meio apagado), sem piscar se "reduzir movimento"
+        const k = reducedMotion ? 1 : 0.35 + 0.65 * (0.5 + 0.5 * Math.sin((time / 1000) * Math.PI * 1.6));
+        blinking.forEach((lamp) => (lamp.material.emissiveIntensity = 1.5 * k));
+      }
       renderer.render(scene, camera);
     };
     renderer.setAnimationLoop(draw);
@@ -723,6 +781,8 @@ export function useHangarScene({
       clearPreview();
       clearPreviewRef.current = () => {};
       sceneApiRef.current = null;
+      if (flow) flow.dispose();
+      if (supply) supply.dispose();
       racks.forEach((g) => {
         setRackOpacity(g, 1);
         disposeFadeClones(g);

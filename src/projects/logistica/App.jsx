@@ -6,6 +6,7 @@ import { overviewFor, useHangarScene } from "./hooks/useHangarScene.js";
 import { hallBounds, sanitizeHall } from "./scene/hallSize.js";
 import { AIRCRAFT, AREA_TYPES, clampCenter, fitAreaToStation, moveArea, orientedRect, presetSize, rectPoints, rotateArea, stationObstacle } from "./scene/stationLayout.js";
 import AreaPresetCard from "./components/AreaPresetCard.jsx";
+import { stationDefaults, stationState, STATION_STATUS } from "./data/stationStatus.js";
 import { ROUTE, buildGrid, rankKanbans, routeSteps } from "./scene/route.js";
 import NavCard from "./components/NavCard.jsx";
 import { STATUS, demoStock, groupResults } from "./data/stock.js";
@@ -121,10 +122,22 @@ export default function Logistica() {
   const uncertain = [...stockByKanban].filter(([, st]) => st === "unknown").map(([id]) => id);
   const hitIds = available.length ? available : uncertain;
   const skipped = [...stockByKanban].filter(([id]) => !hitIds.includes(id)).map(([id, st]) => ({ id, status: st }));
-  const navTerm = stockByKanban.size ? query.trim() : "";
-  const candidatesKey = navTerm ? "q:" + hitIds.join("|") : "";
+  // Destino pode ser uma estação (botão "Rota até a estação" no card da área).
+  const [navTarget, setNavTarget] = useState(null);
+  const targetArea = navTarget ? layout.areas.find((a) => a.id === navTarget) : null;
+  const navTerm = !targetArea && stockByKanban.size ? query.trim() : "";
+  const candidatesKey = targetArea ? "a:" + targetArea.id + JSON.stringify(targetArea.points) : navTerm ? "q:" + hitIds.join("|") : "";
   const ranked = useMemo(() => {
     if (!navOpen || !me || locating) return [];
+    if (targetArea) {
+      // chega pelo meio de um dos lados, por fora da faixa zebrada
+      const r = orientedRect(targetArea.points);
+      const c = Math.cos(r.angle),
+        s = Math.sin(r.angle);
+      const side = (u, v) => ({ x: r.cx + u * c - v * s, z: r.cz + u * s + v * c });
+      const access = [side(r.length / 2 + 1, 0), side(-r.length / 2 - 1, 0), side(0, r.width / 2 + 1), side(0, -r.width / 2 - 1)];
+      return rankKanbans(grid, me, [{ id: targetArea.id, x: r.cx, z: r.cz, access }]);
+    }
     const pool = navTerm ? layout.kanbans.filter((k) => hitIds.includes(k.id)) : layout.kanbans;
     return rankKanbans(grid, me, pool);
   }, [navOpen, me, locating, grid, candidatesKey]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -134,7 +147,9 @@ export default function Logistica() {
     const b = hallBounds(hall);
     return { x: b.maxX - 9, z: b.maxZ - 2.5 }; // abertura da mureta, no canto direito da frente
   };
-  const openNav = () => {
+  const openNav = (areaId = null) => {
+    setNavTarget(areaId);
+    setDestId(null);
     setHallOpen(false);
     setNavOpen(true);
     setWalk(null);
@@ -146,6 +161,7 @@ export default function Logistica() {
     }, 1200);
   };
   const closeNav = () => {
+    setNavTarget(null);
     setNavOpen(false);
     setPicking(false);
     setWalk(null);
@@ -172,6 +188,12 @@ export default function Logistica() {
     setMe({ x: end.x, z: end.z });
     setDestId(destination.id);
     // Chegou: com busca ativa, já abre a caixa do material; senão, aproxima do kanban.
+    if (targetArea) {
+      const r = orientedRect(targetArea.points);
+      focusRef.current(r.cx, r.cz, Math.max(16, r.length * 1.3), 0.63);
+      setNotice("Você chegou à estação " + (targetArea.name || targetArea.id));
+      return;
+    }
     const hit = searchGroups.find((g) => g.kanban.id === destination.id); // caixa com material, se houver
     if (hit) pickResult(hit.kanban, hit.slot);
     else if (kanban) focusRef.current(kanban.x, kanban.z, 11, ((kanban.rotation || 0) * Math.PI) / 180);
@@ -207,6 +229,7 @@ export default function Logistica() {
     canvas,
     layout,
     kanbanPositions,
+    selectedId: selected,
     showStructure,
     showGrid,
     refs: {
@@ -334,7 +357,20 @@ export default function Logistica() {
   // Área: nome, tipo de estação, aeronave e etapa da montagem.
   const updateArea = (id, patch) => {
     if (viewOnly) return;
-    setLayout((p) => ({ ...p, areas: p.areas.map((a) => (a.id === id ? { ...a, ...patch } : a)) }));
+    setLayout((p) => ({
+      ...p,
+      areas: p.areas.map((a) => {
+        if (a.id !== id) return a;
+        const next = { ...a, ...patch };
+        // virou estação (ou trocou de tipo/aeronave): completa o que faltar com os valores típicos
+        if (patch.type || patch.aircraft) {
+          const d = stationDefaults(next.type || "generic", next.aircraft || "kc390");
+          for (const [key, value] of Object.entries(d)) if (next[key] === undefined) next[key] = value;
+          if (patch.type || !(a.materials || []).length) next.materials = d.materials || next.materials;
+        }
+        return next;
+      }),
+    }));
   };
   const renameKanban = (id, name) => {
     if (viewOnly) return;
@@ -354,7 +390,7 @@ export default function Logistica() {
     const name = AREA_TYPES[areaPreset.type].label + " " + AIRCRAFT[areaPreset.aircraft].label;
     setLayout((p) => ({
       ...p,
-      areas: [...p.areas, { id, name, type: areaPreset.type, aircraft: areaPreset.aircraft, stage: "skeleton", points: rectPoints(center.x, center.z, length, width, angle) }],
+      areas: [...p.areas, { id, name, type: areaPreset.type, aircraft: areaPreset.aircraft, ...stationDefaults(areaPreset.type, areaPreset.aircraft), points: rectPoints(center.x, center.z, length, width, angle) }],
     }));
     chooseTool("select");
     setSelected(id);
@@ -647,6 +683,7 @@ export default function Logistica() {
           onUpdateArea={updateArea}
           onRotateArea={rotateAreaBy}
           onFitArea={fitArea}
+          onRouteToArea={(id) => openNav(id)}
           onRemove={removeSelected}
         />
         <TrackCard layout={layout} selected={selected} selectedSlotId={selectedSlotId} onOpenKanban={openKanban} />
@@ -666,7 +703,8 @@ export default function Logistica() {
           hasRoads={grid.hasRoads}
           stockOf={(id) => stockByKanban.get(id)}
           skipped={skipped}
-          kanbanName={(id) => layout.kanbans.find((k) => k.id === id)?.name || ""}
+          kanbanName={(id) => (layout.kanbans.find((k) => k.id === id) || layout.areas.find((a) => a.id === id))?.name || ""}
+          title={targetArea ? "Rota até a estação" : null}
           onPickPosition={() => setPicking((p) => !p)}
           onChooseDestination={(id) => setDestId(id)}
           onStart={startWalk}

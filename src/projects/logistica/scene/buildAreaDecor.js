@@ -3,6 +3,8 @@ import { mat, textTexture } from "./theme.js";
 import { ribbonGeometry } from "./buildNavigator.js";
 import { AIRCRAFT, AREA_TYPES, hasModel, orientedRect, sanitizeArea } from "./stationLayout.js";
 
+const STATION_LABEL = { working: "Em montagem", waiting: "Aguardando material", stopped: "Parada", idle: "Livre" };
+
 
 // Identidade da área no piso: faixa zebrada de segurança na borda, nome pintado no chão e um
 // totem com andon (torre de luz) + placa. Usa canvas (texturas), então só roda no navegador.
@@ -46,7 +48,35 @@ export function areaLabel(rawArea) {
   return { floor: AREA_TYPES[area.type].short + " · " + aircraft.toUpperCase(), sign: area.name || AREA_TYPES[area.type].label };
 }
 
-export function buildAreaDecor(rawArea) {
+// Placa do totem: nome em cima e, embaixo, a situação e o progresso.
+function signTexture(title, subtitle, color) {
+  const canvas = document.createElement("canvas");
+  canvas.width = 512;
+  canvas.height = 224;
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.roundRect(0, 0, 512, 224, 26);
+  ctx.fill();
+  ctx.fillStyle = "#ffffff";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.font = "800 54px Inter, system-ui, sans-serif";
+  ctx.fillText(title, 256, subtitle ? 82 : 112, 470);
+  if (subtitle) {
+    ctx.fillStyle = "rgba(255,255,255,0.88)";
+    ctx.font = "650 36px Inter, system-ui, sans-serif";
+    ctx.fillText(subtitle, 256, 158, 470);
+  }
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
+
+const LAMPS = { red: "#ef4444", yellow: "#f5b014", green: "#22c55e" };
+
+// state (opcional): resultado de stationState — acende o andon e escreve a situação na placa.
+export function buildAreaDecor(rawArea, state = null) {
   const area = sanitizeArea(rawArea);
   const group = new THREE.Group();
   if (!area.points || area.points.length < 3) return group;
@@ -92,25 +122,35 @@ export function buildAreaDecor(rawArea) {
   };
   add(new THREE.BoxGeometry(0.5, 0.08, 0.5), mat("#363d4b", { roughness: 0.6 }), 0, 0.04, 0);
   add(new THREE.CylinderGeometry(0.05, 0.05, 2.5, 10), pole, 0, 1.25, 0);
-  // luzes: vermelha, amarela, verde (verde acesa = estação em operação)
-  [["#5a1f1f", 0], ["#5a4a1a", 0], ["#22c55e", 1]].forEach(([c, lit], i) =>
-    add(
+  // luzes de cima para baixo: vermelha (parada), amarela (aguardando), verde (em montagem).
+  // A acesa vem da situação; vermelha e amarela piscam (a cena anima quem tem userData.blink).
+  const lit = state ? state.andon : hasModel(area.type) ? "green" : "off";
+  ["red", "yellow", "green"].forEach((name, i) => {
+    const on = lit === name;
+    const lamp = add(
       new THREE.CylinderGeometry(0.13, 0.13, 0.2, 16),
-      new THREE.MeshStandardMaterial({ color: c, emissive: lit ? c : "#000000", emissiveIntensity: lit ? 1.4 : 0, roughness: 0.35 }),
+      new THREE.MeshStandardMaterial({
+        color: on ? LAMPS[name] : new THREE.Color(LAMPS[name]).multiplyScalar(0.28),
+        emissive: on ? LAMPS[name] : "#000000",
+        emissiveIntensity: on ? 1.4 : 0,
+        roughness: 0.35,
+      }),
       0,
       2.6 + (2 - i) * 0.22,
       0,
-    ),
-  );
+    );
+    if (on && name !== "green") lamp.userData.blink = true;
+  });
   add(new THREE.CylinderGeometry(0.15, 0.15, 0.05, 16), pole, 0, 3.3, 0);
-  // placa com o nome da área (nas duas faces)
-  const signTex = textTexture(sign, { width: 512, height: 192, bg: color, fg: "#ffffff", font: "800 58px Inter, system-ui, sans-serif", radius: 26 });
+  // placa com o nome, a situação e o progresso (nas duas faces)
+  const subtitle = state && hasModel(area.type) ? (STATION_LABEL[state.status] || "") + (area.type !== "jigs" ? " · " + Math.round(area.progress) + "%" : "") : "";
+  const signTex = signTexture(sign, subtitle, color);
   const signMat = new THREE.MeshBasicMaterial({ map: signTex });
   for (const side of [1, -1]) {
-    const panel = add(new THREE.PlaneGeometry(1.5, 0.56), signMat, 0, 1.75, side * 0.035);
+    const panel = add(new THREE.PlaneGeometry(1.5, 0.66), signMat, 0, 1.75, side * 0.035);
     panel.rotation.y = side > 0 ? 0 : Math.PI;
   }
-  add(new THREE.BoxGeometry(1.56, 0.62, 0.06), mat("#ffffff", { roughness: 0.5 }), 0, 1.75, 0);
+  add(new THREE.BoxGeometry(1.56, 0.72, 0.06), mat("#ffffff", { roughness: 0.5 }), 0, 1.75, 0);
   const corner = at(rect.length / 2 - 0.55, rect.width / 2 - 0.55);
   totem.position.copy(corner);
   totem.rotation.y = -rect.angle; // placa voltada para a frente da área (+v)

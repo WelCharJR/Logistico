@@ -46,6 +46,7 @@ export default function NavCard({
   searchTerm,
   hasRoads,
   stockOf = () => null,
+  title = null,
   skipped = [],
   kanbanName,
   onPickPosition,
@@ -67,7 +68,7 @@ export default function NavCard({
       <header>
         <div>
           <span className="log-eyebrow">GPS · demonstração</span>
-          <h3>{searchTerm ? "Kanban mais perto com " + searchTerm : "Kanban mais perto"}</h3>
+          <h3>{title || (searchTerm ? "Kanban mais perto com " + searchTerm : "Kanban mais perto")}</h3>
         </div>
         <button className="log-close" onClick={onClose} aria-label="Fechar">
           <X size={16} />

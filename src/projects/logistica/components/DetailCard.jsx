@@ -1,6 +1,6 @@
 import { Maximize2, RotateCcw, RotateCw, Trash2, X } from "lucide-react";
 import { pathTypes } from "../constants.js";
-import { AIRCRAFT, AREA_TYPES, STAGES, hasModel, hasStage, presetSize, sanitizeArea, stationFit } from "../scene/stationLayout.js";
+import AreaCard from "./AreaCard.jsx";
 
 const occupancy = (k) => k.slots.filter((s) => s.code).length;
 
@@ -19,6 +19,7 @@ export default function DetailCard({
   onUpdateArea = () => {},
   onRotateArea = () => {},
   onFitArea = () => {},
+  onRouteToArea = () => {},
   onRemove,
 }) {
   const kanban = layout.kanbans.find((k) => k.id === selected);
@@ -116,110 +117,18 @@ export default function DetailCard({
   }
 
   if (area) {
-    const a = sanitizeArea(area);
-    const fit = stationFit(a);
-    const type = AREA_TYPES[a.type];
     return (
-      <aside className="log-card log-detail-card">
-        <header>
-          <span className="log-card-icon area" style={{ background: type.color }}>
-            A
-          </span>
-          <div>
-            <span className="log-eyebrow">Área · {a.id}</span>
-            {viewOnly ? (
-              <h3>{a.name}</h3>
-            ) : (
-              <input className="log-title-input" value={a.name} onChange={(e) => onUpdateArea(a.id, { name: e.target.value })} aria-label="Nome da área" />
-            )}
-          </div>
-          <button className="log-close" onClick={onClose} aria-label="Fechar detalhes">
-            <X size={16} />
-          </button>
-        </header>
-        <div className="log-area-form">
-          <label>
-            <span>Estação</span>
-            <select disabled={viewOnly} value={a.type} onChange={(e) => onUpdateArea(a.id, { type: e.target.value })}>
-              {Object.entries(AREA_TYPES).map(([key, t]) => (
-                <option key={key} value={key}>
-                  {t.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          {hasModel(a.type) && (
-            <label>
-              <span>Aeronave</span>
-              <div className="log-seg">
-                {Object.entries(AIRCRAFT).map(([key, ac]) => (
-                  <button key={key} type="button" disabled={viewOnly} className={a.aircraft === key ? "on" : ""} onClick={() => onUpdateArea(a.id, { aircraft: key })}>
-                    {ac.label}
-                  </button>
-                ))}
-              </div>
-            </label>
-          )}
-          {hasStage(a.type) && (
-            <label>
-              <span>Etapa da montagem</span>
-              <div className="log-seg">
-                {Object.entries(STAGES).map(([key, st]) => (
-                  <button key={key} type="button" disabled={viewOnly} className={a.stage === key ? "on" : ""} onClick={() => onUpdateArea(a.id, { stage: key })} title={st.hint}>
-                    {st.label}
-                  </button>
-                ))}
-              </div>
-              <small>{STAGES[a.stage].hint}</small>
-            </label>
-          )}
-        </div>
-        <dl className="log-facts">
-          <div>
-            <dt>Tamanho</dt>
-            <dd>
-              {fit.rect.length.toFixed(1).replace(".", ",")} × {fit.rect.width.toFixed(1).replace(".", ",")} m
-            </dd>
-          </div>
-          <div>
-            <dt>Direção</dt>
-            <dd className="log-rotate">
-              {!viewOnly && (
-                <button onClick={() => onRotateArea(a.id, -15)} aria-label="Girar a área 15 graus para a esquerda">
-                  <RotateCcw size={14} />
-                </button>
-              )}
-              <span>{Math.round((((fit.rect.angle * 180) / Math.PI) % 180 + 180) % 180)}°</span>
-              {!viewOnly && (
-                <button onClick={() => onRotateArea(a.id, 15)} aria-label="Girar a área 15 graus para a direita">
-                  <RotateCw size={14} />
-                </button>
-              )}
-            </dd>
-          </div>
-          {fit.scale > 0 && (
-            <div>
-              <dt>Modelo</dt>
-              <dd>{fit.scale >= 0.999 ? "tamanho real" : "maquete " + Math.round(fit.scale * 100) + "%"}</dd>
-            </div>
-          )}
-        </dl>
-        {!viewOnly && hasModel(a.type) && (() => {
-          const [l, w] = presetSize(a.type, a.aircraft);
-          const off = Math.abs(fit.rect.length - l) > 0.3 || Math.abs(fit.rect.width - w) > 0.3;
-          return off ? (
-            <button className="log-btn ghost wide" onClick={() => onFitArea(a.id)} title="Refaz a área como retângulo no tamanho certo para a peça, no mesmo lugar">
-              Ajustar ao tamanho da estação ({String(l).replace(".", ",")} × {String(w).replace(".", ",")} m)
-            </button>
-          ) : null;
-        })()}
-        {!viewOnly && <p className="log-hall-note">Com a área selecionada: arraste para mover, WASD empurra, R gira.</p>}
-        {!viewOnly && (
-          <button className="log-btn danger wide" onClick={onRemove}>
-            <Trash2 size={15} /> Remover área
-          </button>
-        )}
-      </aside>
+      <AreaCard
+        area={area}
+        kanbans={layout.kanbans}
+        viewOnly={viewOnly}
+        onClose={onClose}
+        onUpdate={onUpdateArea}
+        onRotate={onRotateArea}
+        onFit={onFitArea}
+        onRoute={onRouteToArea}
+        onRemove={onRemove}
+      />
     );
   }
 

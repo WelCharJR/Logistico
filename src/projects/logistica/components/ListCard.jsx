@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { ChevronRight } from "lucide-react";
 import { pathTypes } from "../constants.js";
+import { AIRCRAFT, AREA_TYPES, hasModel, hasStage, sanitizeArea } from "../scene/stationLayout.js";
+import { STATION_STATUS, stationState } from "../data/stationStatus.js";
 
 // Lista do layout em abas (canto inferior direito). Clicar seleciona e leva a câmera até o item.
 export default function ListCard({ layout, selected, onPick }) {
@@ -24,7 +26,20 @@ export default function ListCard({ layout, selected, onPick }) {
         bar: pct,
       };
     });
-  if (tab === "areas") rows = layout.areas.map((a) => ({ id: a.id, name: a.name, sub: `${a.points.length} vértices`, pill: "Área", tone: "area" }));
+  if (tab === "areas")
+    rows = layout.areas.map((raw) => {
+      // estação: tipo, aeronave, progresso e a situação (cor do andon) no selo
+      const a = sanitizeArea(raw);
+      if (!hasModel(a.type)) return { id: a.id, name: a.name, sub: `${a.points.length} vértices`, pill: "Área", tone: "area" };
+      const st = stationState(a, layout.kanbans);
+      return {
+        id: a.id,
+        name: a.name,
+        sub: AREA_TYPES[a.type].label + " · " + AIRCRAFT[a.aircraft].label + (hasStage(a.type) ? " · " + Math.round(a.progress) + "%" : ""),
+        pill: STATION_STATUS[st.status].label,
+        tone: "st-" + STATION_STATUS[st.status].tone,
+      };
+    });
   if (tab === "paths")
     rows = layout.paths.map((p) => ({
       id: p.id,

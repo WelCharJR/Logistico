@@ -28,12 +28,20 @@ export const STAGES = {
 export const hasModel = (type) => type in AREA_TYPES && type !== "generic";
 export const hasStage = (type) => hasModel(type) && type !== "jigs";
 
+// Progresso (0–100) -> etapa visual da peça: estrutura, revestimento, completa.
+export const STAGE_PROGRESS = { skeleton: 15, skin: 55, complete: 100 };
+export const stageFromProgress = (p) => (p < 34 ? "skeleton" : p < 80 ? "skin" : "complete");
+
+// Com progresso definido, a etapa em 3D acompanha o progresso; sem ele, vale a etapa salva.
 export function sanitizeArea(area = {}) {
+  const stage = STAGES[area.stage] ? area.stage : "skeleton";
+  const progress = Number.isFinite(area.progress) ? Math.max(0, Math.min(100, area.progress)) : STAGE_PROGRESS[stage];
   return {
     ...area,
     type: AREA_TYPES[area.type] ? area.type : "generic",
     aircraft: AIRCRAFT[area.aircraft] ? area.aircraft : "kc390",
-    stage: STAGES[area.stage] ? area.stage : "skeleton",
+    progress,
+    stage: Number.isFinite(area.progress) ? stageFromProgress(progress) : stage,
   };
 }
 
