@@ -4,7 +4,8 @@ import { COLS, KEY, ROWS, pathTypes } from "./constants.js";
 import { emptySlots, loadLayout } from "./data/layout.js";
 import { overviewFor, useHangarScene } from "./hooks/useHangarScene.js";
 import { hallBounds, sanitizeHall } from "./scene/hallSize.js";
-import { stationObstacle } from "./scene/stationLayout.js";
+import { AIRCRAFT, AREA_TYPES, clampCenter, fitAreaToStation, moveArea, orientedRect, presetSize, rectPoints, rotateArea, stationObstacle } from "./scene/stationLayout.js";
+import AreaPresetCard from "./components/AreaPresetCard.jsx";
 import { ROUTE, buildGrid, rankKanbans, routeSteps } from "./scene/route.js";
 import NavCard from "./components/NavCard.jsx";
 import { STATUS, demoStock, groupResults } from "./data/stock.js";
@@ -66,6 +67,9 @@ export default function Logistica() {
   const openSlotRef = useRef(null);
   // Kanban selecionado: a cena nunca esmaece essa estante.
   const selectedRef = useRef(null);
+  // Estação pronta escolhida na ferramenta de área: { type, aircraft, angle } (null = desenhar livre).
+  const [areaPreset, setAreaPreset] = useState({ type: "fuselage", aircraft: "kc390", angle: 0 });
+  const presetRef = useRef(null);
   // GPS: a cena lê rota/posição/caminhada daqui a cada quadro.
   const navRef = useRef({});
   const term = query.trim().toLocaleLowerCase();
@@ -220,6 +224,7 @@ export default function Logistica() {
       openSlotRef,
       navRef,
       selectedRef,
+      presetRef,
     },
     setters: {
       setLayout,
@@ -340,6 +345,45 @@ export default function Logistica() {
     setLayout((p) => ({ ...p, kanbans: p.kanbans.map((k) => k.id !== kanbanId ? k : { ...k, slots: k.slots.map((s) => s.id !== slotId ? s : { ...s, code: "", name: "", qty: 0, unit: "un" }) }) }));
   };
   const inspected = layout.kanbans.find((k) => k.id === inspectedKanban);
+  // ---------- áreas: estação pronta, mover, girar, ajustar ----------
+  const placeArea = (center) => {
+    if (viewOnly || !areaPreset) return;
+    const [length, width] = presetSize(areaPreset.type, areaPreset.aircraft);
+    const angle = (areaPreset.angle * Math.PI) / 180;
+    const id = "A-" + String(Date.now()).slice(-5);
+    const name = AREA_TYPES[areaPreset.type].label + " " + AIRCRAFT[areaPreset.aircraft].label;
+    setLayout((p) => ({
+      ...p,
+      areas: [...p.areas, { id, name, type: areaPreset.type, aircraft: areaPreset.aircraft, stage: "skeleton", points: rectPoints(center.x, center.z, length, width, angle) }],
+    }));
+    chooseTool("select");
+    setSelected(id);
+    setNotice("Estação colocada. Para mover, arraste a área (já selecionada) ou use WASD; R gira.");
+  };
+  const rotatePreset = (delta) => setAreaPreset((p) => (p ? { ...p, angle: (((p.angle + delta) % 360) + 360) % 360 } : p));
+  // Mantém a área dentro do hangar depois de mover/girar.
+  const keepInside = (points) => {
+    const r = orientedRect(points);
+    const c = clampCenter(r.cx, r.cz, r.length, r.width, r.angle, hallBounds(layout.hall));
+    return moveArea(points, c.x - r.cx, c.z - r.cz);
+  };
+  const changeArea = (id, change) => {
+    if (viewOnly) return;
+    setLayout((p) => ({ ...p, areas: p.areas.map((a) => (a.id === id ? { ...a, points: keepInside(change(a)) } : a)) }));
+  };
+  const rotateAreaBy = (id, degrees) => changeArea(id, (a) => rotateArea(a.points, degrees));
+  const fitArea = (id) => {
+    changeArea(id, (a) => fitAreaToStation(a));
+    setNotice("Área ajustada ao tamanho da estação.");
+  };
+  presetRef.current =
+    tool === "area" && areaPreset && !viewOnly
+      ? (() => {
+          const [length, width] = presetSize(areaPreset.type, areaPreset.aircraft);
+          return { length, width, angle: (areaPreset.angle * Math.PI) / 180, color: AREA_TYPES[areaPreset.type].color, onPlace: placeArea };
+        })()
+      : null;
+
   const chooseTool = (next) => {
     toolRef.current = next;
     setTool(next);
@@ -350,7 +394,9 @@ export default function Logistica() {
     clearPreviewRef.current();
     setNotice(
       next === "area"
-        ? "Clique no piso para marcar os vértices da área."
+        ? areaPreset
+          ? "Escolha a estação no card e clique no chão para colocar. R gira."
+          : "Clique no piso para marcar os vértices da área."
         : "Clique no piso para traçar o caminho.",
     );
   };
@@ -445,10 +491,31 @@ export default function Logistica() {
   useEffect(() => {
     const onKeyDown = (event) => {
       if (event.target instanceof HTMLElement && (event.target.isContentEditable || /INPUT|TEXTAREA|SELECT|BUTTON/.test(event.target.tagName))) return;
-      if (viewOnly || tool !== "select" || !selected || event.altKey || event.ctrlKey || event.metaKey) return;
+      if (viewOnly || event.altKey || event.ctrlKey || event.metaKey) return;
+      const key = event.key.toLowerCase();
+      // Estação pronta: R gira a prévia antes de colocar.
+      if (tool === "area" && areaPreset && key === "r") {
+        event.preventDefault();
+        rotatePreset(event.shiftKey ? -15 : 15);
+        return;
+      }
+      if (tool !== "select" || !selected) return;
+      // Área selecionada: R gira, WASD/setas movem (Shift = passo maior).
+      if (layout.areas.some((a) => a.id === selected)) {
+        if (key === "r") {
+          event.preventDefault();
+          rotateAreaBy(selected, event.shiftKey ? -15 : 15);
+          return;
+        }
+        const step = event.shiftKey ? 2 : 0.5;
+        const delta = { w: [0, -step], arrowup: [0, -step], s: [0, step], arrowdown: [0, step], a: [-step, 0], arrowleft: [-step, 0], d: [step, 0], arrowright: [step, 0] }[key];
+        if (!delta) return;
+        event.preventDefault();
+        changeArea(selected, (a) => moveArea(a.points, delta[0], delta[1]));
+        return;
+      }
       const kanban = layout.kanbans.find((item) => item.id === selected);
       if (!kanban) return;
-      const key = event.key.toLowerCase();
       if (key === "r") {
         event.preventDefault();
         rotateKanban(selected, event.shiftKey ? -15 : 15);
@@ -578,6 +645,8 @@ export default function Logistica() {
           onOpenKanban={openKanban}
           onPathWidth={setPathWidth}
           onUpdateArea={updateArea}
+          onRotateArea={rotateAreaBy}
+          onFitArea={fitArea}
           onRemove={removeSelected}
         />
         <TrackCard layout={layout} selected={selected} selectedSlotId={selectedSlotId} onOpenKanban={openKanban} />
@@ -603,6 +672,19 @@ export default function Logistica() {
           onStart={startWalk}
           onStop={() => setWalk(null)}
           onClose={closeNav}
+        />
+      )}
+      {tool === "area" && !viewOnly && (
+        <AreaPresetCard
+          preset={areaPreset}
+          onChoose={(next) => {
+            setAreaPreset(next ? { angle: areaPreset?.angle || 0, ...next } : null);
+            draftRef.current = [];
+            setDraft([]);
+            clearPreviewRef.current();
+          }}
+          onRotate={rotatePreset}
+          onClose={() => chooseTool("select")}
         />
       )}
       {hallOpen && !viewOnly && <HallSizeCard layout={layout} onApply={applyHall} onClose={() => setHallOpen(false)} />}

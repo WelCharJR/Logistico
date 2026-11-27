@@ -156,6 +156,18 @@
 .log-meter > div { display: flex; justify-content: space-between; margin-bottom: 7px; font-size: 12px; color: var(--muted); }
 .log-meter b { color: var(--ink); }
 .log-bar { display: block; height: 8px; border-radius: 99px; background: #e8edf6; overflow: hidden; }
+.log-preset-card { z-index: 12; top: calc(var(--gap) + 160px); left: calc(var(--gap) + 66px); width: 330px; display: grid; gap: 12px; padding: 16px; background: #fff; animation: log-pop 0.22s cubic-bezier(0.23, 1, 0.32, 1); }
+.log-preset-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.log-preset-grid button { position: relative; display: grid; gap: 2px; justify-items: start; padding: 9px 10px 9px 24px; border: 1px solid var(--line); border-radius: 11px; background: #fff; text-align: left; }
+.log-preset-grid button i { position: absolute; left: 10px; top: 13px; width: 8px; height: 8px; border-radius: 3px; background: var(--tone); }
+.log-preset-grid button b { font-size: 12.5px; }
+.log-preset-grid button small { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.log-preset-grid button:hover { border-color: var(--tone, var(--blue)); }
+.log-preset-grid button.on { border-color: var(--tone, var(--blue)); background: color-mix(in srgb, var(--tone, var(--blue)) 9%, #fff); }
+.log-preset-grid button.free { padding-left: 10px; }
+.log-preset-grid button.free svg { color: var(--muted); }
+.log-preset-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.log-preset-foot small { font-size: 11.5px; color: var(--muted); }
 .log-area-form { display: grid; gap: 10px; margin-bottom: 10px; }
 .log-area-form label { display: grid; gap: 5px; font-size: 11.5px; font-weight: 650; color: var(--muted); }
 .log-area-form select { height: 36px; padding: 0 10px; border: 1px solid var(--line-strong); border-radius: 9px; background: #fff; font: inherit; font-size: 13px; font-weight: 600; color: var(--ink); }
@@ -431,6 +443,7 @@
   .log-track-item { width: auto; }
   .log-drawer, .log-drawer-backdrop, .kanban-backdrop { position: fixed; }
   .log-hall-card { position: fixed !important; top: auto; left: 0; right: 0; bottom: 0; width: auto !important; border-radius: 20px 20px 0 0; z-index: 26; }
+  .log-preset-card { position: fixed !important; top: auto; left: 0; right: 0; bottom: 0; width: auto !important; border-radius: 20px 20px 0 0; z-index: 26; }
   .log-nav-card { position: fixed !important; top: auto; left: 0; right: 0; bottom: 0; width: auto !important; max-height: 58svh; border-radius: 20px 20px 0 0; z-index: 26; }
   .log-nav-steps { display: none; }
   .log-drawer { top: auto; left: 0; right: 0; bottom: 0; width: auto; max-width: none; max-height: 88svh; border-radius: 20px 20px 0 0; }

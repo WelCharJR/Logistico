@@ -96,13 +96,18 @@ const MARGIN = 0.6; // folga entre a estação e a borda (faixa zebrada)
 
 // Escala para a estação caber na área: nunca maior que o tamanho real; a montagem final do
 // KC-390 (36 m) vira uma maquete numa área pequena.
+// modelAngle: direção do eixo x do modelo. Peças mais largas que compridas (cauda em T) giram 90°
+// para o lado maior da peça ficar no lado maior da área. footprint segue os eixos do modelo.
 export function stationFit(rawArea) {
   const area = sanitizeArea(rawArea);
   const rect = orientedRect(area.points);
-  if (!hasModel(area.type)) return { rect, scale: 0, footprint: [0, 0] };
+  if (!hasModel(area.type)) return { rect, scale: 0, footprint: [0, 0], modelAngle: rect.angle };
   const [needL, needW] = FOOTPRINT[area.aircraft][area.type];
-  const scale = Math.max(0.12, Math.min(1, (rect.length - 2 * MARGIN) / needL, (rect.width - 2 * MARGIN) / needW));
-  return { rect, scale, footprint: [needL * scale, needW * scale] };
+  const turn = needW > needL;
+  const alongLength = turn ? needW : needL,
+    alongWidth = turn ? needL : needW;
+  const scale = Math.max(0.12, Math.min(1, (rect.length - 2 * MARGIN) / alongLength, (rect.width - 2 * MARGIN) / alongWidth));
+  return { rect, scale, footprint: [needL * scale, needW * scale], modelAngle: rect.angle + (turn ? Math.PI / 2 : 0) };
 }
 
 // Obstáculo para o GPS: o retângulo ocupado pela estação (pessoas contornam o gabarito).
@@ -114,8 +119,69 @@ export function stationObstacle(rawArea) {
     id: rawArea.id,
     x: fit.rect.cx,
     z: fit.rect.cz,
-    rotation: (-fit.rect.angle * 180) / Math.PI,
+    rotation: (-fit.modelAngle * 180) / Math.PI,
     halfX: fit.footprint[0] / 2 - 0.3,
     halfZ: fit.footprint[1] / 2 - 0.3,
   };
+}
+
+// ---------------- posicionamento: tamanhos prontos, mover, girar, ajustar ----------------
+
+const half = (v) => Math.ceil(v * 2) / 2; // arredonda para cima em 0,5 m
+
+// Tamanho pronto de uma área para a estação (comprimento x largura, já com a folga da faixa).
+export function presetSize(type, aircraft) {
+  const need = FOOTPRINT[aircraft]?.[type];
+  if (!need) return null;
+  return [half(Math.max(...need) + 2 * MARGIN), half(Math.min(...need) + 2 * MARGIN)];
+}
+
+// Retângulo (4 vértices) com centro, comprimento, largura e direção (rad).
+export function rectPoints(cx, cz, length, width, angle = 0) {
+  const c = Math.cos(angle),
+    s = Math.sin(angle);
+  const round = (v) => Math.round(v * 100) / 100;
+  return [
+    [-length / 2, -width / 2],
+    [length / 2, -width / 2],
+    [length / 2, width / 2],
+    [-length / 2, width / 2],
+  ].map(([u, v]) => ({ x: round(cx + u * c - v * s), z: round(cz + u * s + v * c) }));
+}
+
+// Mantém o retângulo inteiro dentro do hangar (com 0,5 m das paredes).
+export function clampCenter(cx, cz, length, width, angle, bounds, wall = 0.5) {
+  const c = Math.abs(Math.cos(angle)),
+    s = Math.abs(Math.sin(angle));
+  const hx = (length * c + width * s) / 2,
+    hz = (length * s + width * c) / 2;
+  const clamp = (v, lo, hi) => (lo > hi ? (lo + hi) / 2 : Math.min(hi, Math.max(lo, v)));
+  return {
+    x: clamp(cx, bounds.minX + wall + hx, bounds.maxX - wall - hx),
+    z: clamp(cz, bounds.minZ + wall + hz, bounds.maxZ - wall - hz),
+  };
+}
+
+export const moveArea = (points, dx, dz) => points.map((p) => ({ x: Math.round((p.x + dx) * 100) / 100, z: Math.round((p.z + dz) * 100) / 100 }));
+
+// Gira os vértices em torno do centro do retângulo da área (graus; positivo = sentido horário visto de cima).
+export function rotateArea(points, degrees) {
+  const { cx, cz } = orientedRect(points);
+  const a = (degrees * Math.PI) / 180,
+    c = Math.cos(a),
+    s = Math.sin(a);
+  return points.map((p) => {
+    const dx = p.x - cx,
+      dz = p.z - cz;
+    return { x: Math.round((cx + dx * c - dz * s) * 100) / 100, z: Math.round((cz + dx * s + dz * c) * 100) / 100 };
+  });
+}
+
+// Refaz a área como retângulo no tamanho pronto da estação, no mesmo lugar e direção.
+export function fitAreaToStation(rawArea) {
+  const area = sanitizeArea(rawArea);
+  const size = presetSize(area.type, area.aircraft);
+  if (!size) return area.points;
+  const { cx, cz, angle } = orientedRect(area.points);
+  return rectPoints(cx, cz, size[0], size[1], angle);
 }

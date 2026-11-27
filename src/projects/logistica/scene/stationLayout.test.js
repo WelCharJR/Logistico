@@ -66,3 +66,45 @@ test("obstáculo de estação girada bloqueia a grade do GPS no lugar certo", as
   assert.equal(cell(3.5, 3.5), 1); // ao longo da diagonal (eixo da área)
   assert.equal(cell(3.5, -3.5), 0); // perpendicular: livre
 });
+
+// ---- posicionamento ----
+import { clampCenter, fitAreaToStation, moveArea, presetSize, rectPoints, rotateArea } from "./stationLayout.js";
+
+test("tamanho pronto = estação + folga, arredondado em 0,5 m", () => {
+  assert.deepEqual(presetSize("fuselage", "kc390"), [12.5, 11.5]);
+  assert.equal(presetSize("generic", "kc390"), null);
+  // uma área no tamanho pronto mostra a estação em tamanho real
+  for (const aircraft of ["kc390", "tucano"])
+    for (const type of ["fuselage", "wing", "tail", "final", "jigs"]) {
+      const [l, w] = presetSize(type, aircraft);
+      assert.equal(stationFit({ type, aircraft, points: rectPoints(0, 0, l, w, 0.3) }).scale, 1, aircraft + "/" + type);
+    }
+});
+
+test("retângulo pelos parâmetros volta igual no orientedRect", () => {
+  const r = orientedRect(rectPoints(3, -2, 10, 4, 0.5));
+  near(r.cx, 3, 0.02); near(r.cz, -2, 0.02); near(r.length, 10, 0.02); near(r.width, 4, 0.02); near(r.angle, 0.5, 0.01);
+});
+
+test("mover e girar preservam o tamanho", () => {
+  const pts = rectPoints(0, 0, 10, 4, 0);
+  const moved = orientedRect(moveArea(pts, 5, -3));
+  near(moved.cx, 5); near(moved.cz, -3);
+  const turned = orientedRect(rotateArea(pts, 30));
+  near(turned.length, 10, 0.03); near(turned.width, 4, 0.03); near(turned.angle, Math.PI / 6, 0.01); near(turned.cx, 0, 0.02);
+});
+
+test("ajustar ao tamanho da estação mantém centro e direção", () => {
+  const area = { type: "wing", aircraft: "tucano", points: rectPoints(4, 4, 20, 9, 0.4) };
+  const r = orientedRect(fitAreaToStation(area));
+  const [l, w] = presetSize("wing", "tucano");
+  near(r.length, l, 0.03); near(r.width, w, 0.03); near(r.cx, 4, 0.03); near(r.angle, 0.4, 0.01);
+});
+
+test("centro preso dentro do hangar", () => {
+  const b = { minX: -30, maxX: 30, minZ: -22, maxZ: 22 };
+  const c = clampCenter(29, 0, 10, 4, 0, b);
+  near(c.x, 30 - 0.5 - 5);
+  const r = clampCenter(0, 21, 10, 4, Math.PI / 2, b); // girada: comprimento em z
+  near(r.z, 22 - 0.5 - 5);
+});

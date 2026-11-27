@@ -17,6 +17,7 @@ import { CONTENTS_LAYER } from "../scene/binModel.js";
 import { createNavigator } from "../scene/buildNavigator.js";
 import { pointAlong } from "../scene/route.js";
 import { STATUS, slotStatus } from "../data/stock.js";
+import { clampCenter, moveArea } from "../scene/stationLayout.js";
 
 // Cena Three.js do hangar: câmera, luzes, galpão, kanbans, áreas, caminhos e mouse.
 // Só é recriada quando muda a posição dos kanbans, as áreas ou os caminhos (mesmas dependências de antes).
@@ -41,7 +42,7 @@ export function useHangarScene({
   refs,
   setters,
 }) {
-  const { toolRef, draftRef, pathTypeRef, snapRef, layerRefs, clearPreviewRef, zoomRef, focusRef, viewRef, viewOnlyRef, marksRef, openSlotRef, navRef, selectedRef } =
+  const { toolRef, draftRef, pathTypeRef, snapRef, layerRefs, clearPreviewRef, zoomRef, focusRef, viewRef, viewOnlyRef, marksRef, openSlotRef, navRef, selectedRef, presetRef } =
     refs;
   const {
     setLayout,
@@ -57,15 +58,29 @@ export function useHangarScene({
   const layoutRef = useRef(layout);
   layoutRef.current = layout;
   const slotGroupsRef = useRef([]);
-  // Recolore as caixas quando o conteúdo muda (cadastro, remoção, edição), sem recriar a cena.
-  const slotsKey = layout.kanbans.map((k) => k.id + ":" + k.slots.map((s) => (s.code ? 1 : 0)).join("")).join("|");
+  // Recolore as caixas quando o conteúdo muda (cadastro, remoção, quantidade, conferência), sem recriar a cena.
+  const slotsKey = layout.kanbans
+    .map((k) => k.id + ":" + k.slots.map((s) => (s.code ? [s.code, s.qty, s.min, s.capacity, s.checkedAt].join(",") : "")).join(";"))
+    .join("|");
   useEffect(() => {
     paintBins(slotGroupsRef.current, layoutRef.current.kanbans);
   }, [slotsKey]);
 
+  // A cena só é recriada quando entram/saem kanbans ou muda o tamanho do hangar. Mover/girar um
+  // kanban e editar áreas/caminhos atualiza só o que mudou (recriar tudo dava uma travada).
+  const sceneApiRef = useRef(null);
+  const kanbanIds = layout.kanbans.map((k) => k.id).join("|");
+  useEffect(() => {
+    sceneApiRef.current?.placeKanbans(layout.kanbans);
+  }, [kanbanPositions]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    sceneApiRef.current?.syncDrawn(layout.areas, layout.paths);
+  }, [layout.areas, layout.paths]);
+
   const hallKey = (layout.hall?.width || "") + "x" + (layout.hall?.depth || "");
   useEffect(() => {
     const host = canvas.current;
+    const layout = layoutRef.current; // o mais recente (a cena não depende mais das posições)
     const bounds = hallBounds(layout.hall);
     const k = hallScale(layout.hall);
     const overviewView = overviewFor(layout.hall);
@@ -135,24 +150,64 @@ export function useHangarScene({
       scene.add(group);
       kanbanMeshes.set(k.id, group);
     });
+    // Áreas e caminhos: cada um é refeito só quando os próprios dados mudam.
     // Área = piso colorido + faixa zebrada/nome/andon + estação (gabarito e peça), num grupo só:
     // clicar em qualquer parte seleciona a área.
-    layout.areas.forEach((area) => {
-      const root = new THREE.Group();
-      root.userData.id = area.id;
-      root.userData.kind = "area";
-      root.add(buildAreaMesh(area), buildAreaDecor(area));
-      const station = buildStationModel(area);
-      if (station) root.add(station);
+    const drawnById = new Map(); // "area:A-1" -> { key, root }
+    const removeDrawn = (id) => {
+      const entry = drawnById.get(id);
+      if (!entry) return;
+      scene.remove(entry.root);
+      disposeTree(entry.root);
+      drawnMeshes.splice(drawnMeshes.indexOf(entry.root), 1);
+      drawnById.delete(id);
+    };
+    const putDrawn = (id, key, build) => {
+      const current = drawnById.get(id);
+      if (current && current.key === key) return;
+      removeDrawn(id);
+      const root = build();
+      if (!root) return;
       scene.add(root);
       drawnMeshes.push(root);
-    });
-    layout.paths.forEach((path) => {
-      if (path.points.length < 2) return;
-      const group = buildPath(path);
-      scene.add(group);
-      drawnMeshes.push(group);
-    });
+      drawnById.set(id, { key, root });
+    };
+    const syncDrawn = (areas, paths) => {
+      const seen = new Set();
+      areas.forEach((area) => {
+        const id = "area:" + area.id;
+        seen.add(id);
+        putDrawn(id, JSON.stringify([area.points, area.type, area.aircraft, area.stage, area.name]), () => {
+          const root = new THREE.Group();
+          root.userData.id = area.id;
+          root.userData.kind = "area";
+          root.add(buildAreaMesh(area), buildAreaDecor(area));
+          const station = buildStationModel(area);
+          if (station) root.add(station);
+          return root;
+        });
+      });
+      paths.forEach((path) => {
+        if (path.points.length < 2) return;
+        const id = "path:" + path.id;
+        seen.add(id);
+        putDrawn(id, JSON.stringify(path), () => buildPath(path));
+      });
+      [...drawnById.keys()].filter((id) => !seen.has(id)).forEach(removeDrawn);
+    };
+    syncDrawn(layout.areas, layout.paths);
+    const drawnRoot = (id) => drawnById.get("area:" + id)?.root;
+    sceneApiRef.current = {
+      syncDrawn,
+      // mover/girar kanban: só reposiciona a estante (a que está sendo arrastada fica com o mouse)
+      placeKanbans: (kanbans) =>
+        kanbans.forEach((k) => {
+          const m = kanbanMeshes.get(k.id);
+          if (!m || controls.dragging === k.id) return;
+          m.position.set(k.x, 0, k.z);
+          m.rotation.y = THREE.MathUtils.degToRad(k.rotation || 0);
+        }),
+    };
     // Telas em pé (celular) precisam de mais distância para caber o galpão.
     const overview = (r) => (r === overviewView.radius && host.clientWidth < host.clientHeight ? r * 1.6 : r);
     const controls = {
@@ -212,6 +267,38 @@ export function useHangarScene({
     const clearPreview = preview.clear,
       refreshPreview = preview.refresh;
     clearPreviewRef.current = clearPreview;
+    // Prévia da estação pronta (ferramenta de área com tamanho escolhido): retângulo que segue o mouse.
+    const ghost = new THREE.Group();
+    ghost.visible = false;
+    const ghostFill = new THREE.Mesh(
+      new THREE.PlaneGeometry(1, 1),
+      new THREE.MeshBasicMaterial({ color: COLORS.blue, transparent: true, opacity: 0.22, depthWrite: false, side: THREE.DoubleSide }),
+    );
+    ghostFill.rotation.x = -Math.PI / 2;
+    ghostFill.position.y = 0.08;
+    const ghostEdge = new THREE.LineLoop(
+      new THREE.BufferGeometry().setFromPoints([[-0.5, -0.5], [0.5, -0.5], [0.5, 0.5], [-0.5, 0.5]].map(([x, z]) => new THREE.Vector3(x, 0.09, z))),
+      new THREE.LineBasicMaterial({ color: COLORS.blue }),
+    );
+    // seta na ponta "da frente" (eixo comprido), para ver para onde a peça aponta ao girar
+    const ghostArrow = new THREE.Mesh(new THREE.CircleGeometry(0.6, 3), new THREE.MeshBasicMaterial({ color: COLORS.blue, transparent: true, opacity: 0.7 }));
+    ghostArrow.rotation.x = -Math.PI / 2;
+    ghost.add(ghostFill, ghostEdge, ghostArrow);
+    scene.add(ghost);
+    // Mostra a prévia centrada no ponto (presa dentro do hangar); devolve o centro usado.
+    const showGhost = (point) => {
+      const p = presetRef?.current;
+      if (!p) return (ghost.visible = false), null;
+      const c = clampCenter(point.x, point.z, p.length, p.width, p.angle, bounds);
+      ghost.position.set(c.x, 0, c.z);
+      ghost.rotation.y = -p.angle;
+      ghostFill.scale.set(p.length, p.width, 1);
+      ghostEdge.scale.set(p.length, 1, p.width);
+      ghostArrow.position.set(p.length / 2 - 1, 0.1, 0);
+      for (const m of [ghostFill.material, ghostEdge.material, ghostArrow.material]) m.color.set(p.color || COLORS.blue);
+      ghost.visible = true;
+      return c;
+    };
     // Puxada da caixa e porcas/parafusos no hover: só com mouse e respeitando "reduzir movimento".
     const labelCanvas = document.createElement("canvas");
     labelCanvas.width = 512;
@@ -311,6 +398,15 @@ export function useHangarScene({
         clickStart = null;
         return;
       }
+      // Estação pronta: um clique coloca a área no tamanho escolhido.
+      if (!viewOnlyRef.current && toolRef.current === "area" && presetRef?.current) {
+        if (raycaster.ray.intersectPlane(plane, hit)) {
+          const c = showGhost(snapPoint(hit.x, hit.z));
+          if (c) presetRef.current.onPlace?.(c);
+        }
+        controls.down = false;
+        return;
+      }
       if (!viewOnlyRef.current && (toolRef.current === "area" || toolRef.current === "path")) {
         if (raycaster.ray.intersectPlane(plane, hit)) {
           const point = snapPoint(hit.x, hit.z);
@@ -333,6 +429,10 @@ export function useHangarScene({
           o = o.parent;
         }
         controls.dragging = viewOnlyRef.current || o.userData.kind ? null : o.userData.id;
+        // Área já selecionada: arrastar move a área (a primeira vez só seleciona, para não atrapalhar a câmera).
+        if (!viewOnlyRef.current && o.userData.kind === "area" && selectedRef?.current === o.userData.id && raycaster.ray.intersectPlane(plane, hit)) {
+          controls.draggingArea = { id: o.userData.id, root: o, start: snapPoint(hit.x, hit.z), dx: 0, dz: 0 };
+        }
         setSelected(o.userData.id);
         if (clickStart) clickStart.bin = slotOwner;
         if (slotOwner) {
@@ -368,6 +468,15 @@ export function useHangarScene({
           hoverFx.hover(hoveredSlot, performance.now());
           renderer.domElement.style.cursor = navRef?.current?.picking ? "crosshair" : hoveredSlot ? "pointer" : "grab";
         }
+        if (toolRef.current === "area" && presetRef?.current) {
+          hoverFx.hover(null, performance.now());
+          updatePointer(e);
+          raycaster.setFromCamera(pointer, camera);
+          if (raycaster.ray.intersectPlane(plane, hit)) showGhost(snapPoint(hit.x, hit.z));
+          renderer.domElement.style.cursor = "copy";
+          return;
+        }
+        ghost.visible = false;
         if (toolRef.current === "area" || toolRef.current === "path") {
           hoverFx.hover(null, performance.now());
           const screen = updatePointer(e);
@@ -387,6 +496,18 @@ export function useHangarScene({
         dy = e.clientY - controls.lastY;
       controls.lastX = e.clientX;
       controls.lastY = e.clientY;
+      if (controls.draggingArea) {
+        updatePointer(e);
+        raycaster.setFromCamera(pointer, camera);
+        if (raycaster.ray.intersectPlane(plane, hit)) {
+          const drag = controls.draggingArea;
+          const p = snapPoint(hit.x, hit.z);
+          drag.dx = p.x - drag.start.x;
+          drag.dz = p.z - drag.start.z;
+          drag.root.position.set(drag.dx, 0, drag.dz);
+        }
+        return;
+      }
       if (controls.dragging) {
         updatePointer(e);
         raycaster.setFromCamera(pointer, camera);
@@ -410,6 +531,15 @@ export function useHangarScene({
       }
       clickStart = null;
       if (activePointers.size) { controls.down = true; return; }
+      if (controls.draggingArea) {
+        const { id, dx, dz } = controls.draggingArea;
+        controls.draggingArea = null;
+        if (dx || dz) {
+          // salva a área no lugar novo; a cena troca o grupo deslocado pelo refeito nos pontos novos
+          setLayout((prev) => ({ ...prev, areas: prev.areas.map((a) => (a.id === id ? { ...a, points: moveArea(a.points, dx, dz) } : a)) }));
+          setNotice("Área movida.");
+        }
+      }
       if (controls.dragging) {
         const id = controls.dragging,
           m = kanbanMeshes.get(id);
@@ -442,7 +572,7 @@ export function useHangarScene({
     renderer.domElement.addEventListener("pointermove", onMove);
     renderer.domElement.addEventListener("pointerup", onUp);
     renderer.domElement.addEventListener("pointercancel", onUp);
-    renderer.domElement.addEventListener("pointerleave", () => { hoveredSlot = null; updateLabel(null); renderer.domElement.style.cursor = "grab"; hoverFx.hover(null, performance.now()); });
+    renderer.domElement.addEventListener("pointerleave", () => { ghost.visible = false; hoveredSlot = null; updateLabel(null); renderer.domElement.style.cursor = "grab"; hoverFx.hover(null, performance.now()); });
     // Cada posição tem duas caixas (frente e verso): abre a que está virada para a câmera.
     const binWorld = new THREE.Vector3(), binFacing = new THREE.Vector3(), toCamera = new THREE.Vector3();
     const openFromSearch = ({ kanbanId, slotId }, time) => {
@@ -592,6 +722,7 @@ export function useHangarScene({
       window.removeEventListener("resize", resize);
       clearPreview();
       clearPreviewRef.current = () => {};
+      sceneApiRef.current = null;
       racks.forEach((g) => {
         setRackOpacity(g, 1);
         disposeFadeClones(g);
@@ -600,5 +731,5 @@ export function useHangarScene({
       renderer.dispose();
       host.removeChild(renderer.domElement);
     };
-  }, [kanbanPositions, layout.areas, layout.paths, hallKey]);
+  }, [kanbanIds, hallKey]); // eslint-disable-line react-hooks/exhaustive-deps
 }

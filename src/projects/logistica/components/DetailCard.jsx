@@ -1,6 +1,6 @@
 import { Maximize2, RotateCcw, RotateCw, Trash2, X } from "lucide-react";
 import { pathTypes } from "../constants.js";
-import { AIRCRAFT, AREA_TYPES, STAGES, hasModel, hasStage, sanitizeArea, stationFit } from "../scene/stationLayout.js";
+import { AIRCRAFT, AREA_TYPES, STAGES, hasModel, hasStage, presetSize, sanitizeArea, stationFit } from "../scene/stationLayout.js";
 
 const occupancy = (k) => k.slots.filter((s) => s.code).length;
 
@@ -17,6 +17,8 @@ export default function DetailCard({
   onOpenKanban,
   onPathWidth,
   onUpdateArea = () => {},
+  onRotateArea = () => {},
+  onFitArea = () => {},
   onRemove,
 }) {
   const kanban = layout.kanbans.find((k) => k.id === selected);
@@ -179,6 +181,22 @@ export default function DetailCard({
               {fit.rect.length.toFixed(1).replace(".", ",")} × {fit.rect.width.toFixed(1).replace(".", ",")} m
             </dd>
           </div>
+          <div>
+            <dt>Direção</dt>
+            <dd className="log-rotate">
+              {!viewOnly && (
+                <button onClick={() => onRotateArea(a.id, -15)} aria-label="Girar a área 15 graus para a esquerda">
+                  <RotateCcw size={14} />
+                </button>
+              )}
+              <span>{Math.round((((fit.rect.angle * 180) / Math.PI) % 180 + 180) % 180)}°</span>
+              {!viewOnly && (
+                <button onClick={() => onRotateArea(a.id, 15)} aria-label="Girar a área 15 graus para a direita">
+                  <RotateCw size={14} />
+                </button>
+              )}
+            </dd>
+          </div>
           {fit.scale > 0 && (
             <div>
               <dt>Modelo</dt>
@@ -186,7 +204,16 @@ export default function DetailCard({
             </div>
           )}
         </dl>
-        {fit.scale > 0 && fit.scale < 0.6 && <p className="log-hall-note">Desenhe uma área maior para ver a peça em tamanho real.</p>}
+        {!viewOnly && hasModel(a.type) && (() => {
+          const [l, w] = presetSize(a.type, a.aircraft);
+          const off = Math.abs(fit.rect.length - l) > 0.3 || Math.abs(fit.rect.width - w) > 0.3;
+          return off ? (
+            <button className="log-btn ghost wide" onClick={() => onFitArea(a.id)} title="Refaz a área como retângulo no tamanho certo para a peça, no mesmo lugar">
+              Ajustar ao tamanho da estação ({String(l).replace(".", ",")} × {String(w).replace(".", ",")} m)
+            </button>
+          ) : null;
+        })()}
+        {!viewOnly && <p className="log-hall-note">Com a área selecionada: arraste para mover, WASD empurra, R gira.</p>}
         {!viewOnly && (
           <button className="log-btn danger wide" onClick={onRemove}>
             <Trash2 size={15} /> Remover área

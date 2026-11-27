@@ -563,26 +563,48 @@ export function mergeByMaterial(group) {
 
 const BUILDERS = { fuselage: fuselageStation, wing: wingStation, tail: tailStation, final: finalStation, jigs: jigsStation };
 
+// Cache por tipo + aeronave + etapa: o modelo é montado e juntado uma vez só; as áreas reaproveitam
+// as mesmas geometrias (marcadas como compartilhadas, para não serem descartadas com a cena).
+const modelCache = new Map();
+function stationParts(area) {
+  const key = [area.type, area.aircraft, area.type === "jigs" ? "-" : area.stage].join("|");
+  if (!modelCache.has(key)) {
+    const local = new THREE.Group();
+    BUILDERS[area.type](local, area.aircraft, area.stage);
+    // centraliza o conjunto (o modelo pode não ser simétrico)
+    const bounds = new THREE.Box3().setFromObject(local);
+    const center = bounds.getCenter(new THREE.Vector3());
+    local.position.set(-center.x, 0, -center.z);
+    const merged = mergeByMaterial(local);
+    const parts = merged.children.map((mesh) => {
+      mesh.geometry.userData.shared = true;
+      return { geometry: mesh.geometry, material: mesh.material };
+    });
+    modelCache.set(key, { parts, size: bounds.getSize(new THREE.Vector3()) });
+  }
+  return modelCache.get(key);
+}
+
 export function buildStationModel(rawArea) {
   const area = sanitizeArea(rawArea);
   if (!hasModel(area.type) || !area.points?.length) return null;
-  const local = new THREE.Group();
-  BUILDERS[area.type](local, area.aircraft, area.stage);
-  // centraliza o conjunto no retângulo da área (o modelo pode não ser simétrico)
-  const bounds = new THREE.Box3().setFromObject(local);
-  const center = bounds.getCenter(new THREE.Vector3());
-  local.position.set(-center.x, 0, -center.z);
-  const model = mergeByMaterial(local);
-  const { rect, scale } = stationFit(area);
+  const { parts, size } = stationParts(area);
+  const model = new THREE.Group();
+  for (const { geometry, material } of parts) {
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    model.add(mesh);
+  }
+  const { rect, scale, modelAngle } = stationFit(area);
   // escala pelo tamanho de verdade do conjunto (garante caber mesmo se o desenho passar do previsto)
-  const size = bounds.getSize(new THREE.Vector3());
   const [needL, needW] = FOOTPRINT[area.aircraft][area.type];
   const fitScale = Math.min(scale, (scale * needL) / Math.max(needL, size.x), (scale * needW) / Math.max(needW, size.z));
   const root = new THREE.Group();
   root.add(model);
   root.scale.setScalar(fitScale);
   root.position.set(rect.cx, 0, rect.cz);
-  root.rotation.y = -rect.angle;
+  root.rotation.y = -modelAngle;
   root.userData.station = { type: area.type, aircraft: area.aircraft, stage: area.stage, scale: fitScale };
   return root;
 }

@@ -68,3 +68,16 @@ test("área genérica ou sem pontos: sem modelo", () => {
   assert.equal(buildStationModel({ type: "generic", points: rectPts(0, 0, 5, 5) }), null);
   assert.equal(buildStationModel({ type: "wing", points: [] }), null);
 });
+
+test("cache: a mesma estação reaproveita as geometrias e sai bem mais rápido", () => {
+  const points = rectPts(100, 100, 140, 140); // área nova, longe das outras
+  const t0 = performance.now();
+  const first = buildStationModel({ type: "final", aircraft: "kc390", stage: "skin", points });
+  const t1 = performance.now();
+  const second = buildStationModel({ type: "final", aircraft: "kc390", stage: "skin", points: rectPts(0, 0, 40, 40) });
+  const t2 = performance.now();
+  const geos = (r) => { const out = []; r.traverse((o) => o.isMesh && out.push(o.geometry)); return out; };
+  assert.deepEqual(geos(first), geos(second));
+  assert.ok(geos(first).every((g) => g.userData.shared), "geometria do cache não pode ser descartada com a cena");
+  assert.ok(t2 - t1 < (t1 - t0) / 5 + 2, `sem cache ${(t1 - t0).toFixed(1)} ms, com cache ${(t2 - t1).toFixed(1)} ms`);
+});
