@@ -8,6 +8,8 @@ import { COLORS, disposeTree } from "../scene/theme.js";
 import { HALL_DEFAULT, hallBounds } from "../scene/hallSize.js";
 import { disposeFadeClones, findOccluders, ownersOf, setRackOpacity } from "../scene/occlusion.js";
 import { buildAreaMesh, buildPath } from "../scene/buildDrawn.js";
+import { buildAreaDecor } from "../scene/buildAreaDecor.js";
+import { buildStationModel } from "../scene/buildStation.js";
 import { createPreview } from "../scene/createPreview.js";
 import { createHoverFx } from "../scene/createHoverFx.js";
 import { createFlight, flightAt } from "../scene/cameraFlight.js";
@@ -133,10 +135,17 @@ export function useHangarScene({
       scene.add(group);
       kanbanMeshes.set(k.id, group);
     });
+    // Área = piso colorido + faixa zebrada/nome/andon + estação (gabarito e peça), num grupo só:
+    // clicar em qualquer parte seleciona a área.
     layout.areas.forEach((area) => {
-      const mesh = buildAreaMesh(area);
-      scene.add(mesh);
-      drawnMeshes.push(mesh);
+      const root = new THREE.Group();
+      root.userData.id = area.id;
+      root.userData.kind = "area";
+      root.add(buildAreaMesh(area), buildAreaDecor(area));
+      const station = buildStationModel(area);
+      if (station) root.add(station);
+      scene.add(root);
+      drawnMeshes.push(root);
     });
     layout.paths.forEach((path) => {
       if (path.points.length < 2) return;

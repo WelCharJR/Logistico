@@ -1,17 +1,20 @@
 import * as THREE from "three";
 import { pathTypes } from "../constants.js";
+import { AREA_TYPES, sanitizeArea } from "./stationLayout.js";
 
 // Área desenhada pelo usuário (polígono no piso).
-export function buildAreaMesh(area) {
+export function buildAreaMesh(rawArea) {
+  const area = sanitizeArea(rawArea);
+  const color = AREA_TYPES[area.type].color; // cor do tipo de estação
   const shape = new THREE.Shape();
   area.points.forEach((p, i) => (i === 0 ? shape.moveTo(p.x, -p.z) : shape.lineTo(p.x, -p.z)));
   shape.closePath();
   const mesh = new THREE.Mesh(
     new THREE.ShapeGeometry(shape),
     new THREE.MeshStandardMaterial({
-      color: "#3d6bff",
+      color,
       transparent: true,
-      opacity: 0.16,
+      opacity: area.type === "generic" ? 0.16 : 0.12,
       side: THREE.DoubleSide,
       roughness: 0.7,
       depthWrite: false,
@@ -24,7 +27,7 @@ export function buildAreaMesh(area) {
   // Contorno tracejado azul
   const outline = new THREE.LineLoop(
     new THREE.BufferGeometry().setFromPoints(area.points.map((p) => new THREE.Vector3(p.x, -p.z, 0.01))),
-    new THREE.LineDashedMaterial({ color: "#2f55e4", dashSize: 0.5, gapSize: 0.3 }),
+    new THREE.LineDashedMaterial({ color, dashSize: 0.5, gapSize: 0.3 }),
   );
   outline.computeLineDistances();
   mesh.add(outline);

@@ -4,10 +4,12 @@ import { COLS, KEY, ROWS, pathTypes } from "./constants.js";
 import { emptySlots, loadLayout } from "./data/layout.js";
 import { overviewFor, useHangarScene } from "./hooks/useHangarScene.js";
 import { hallBounds, sanitizeHall } from "./scene/hallSize.js";
+import { stationObstacle } from "./scene/stationLayout.js";
 import { ROUTE, buildGrid, rankKanbans, routeSteps } from "./scene/route.js";
 import NavCard from "./components/NavCard.jsx";
 import { STATUS, demoStock, groupResults } from "./data/stock.js";
 import { demoHangar } from "./data/demoContents.js";
+import { demoAreas } from "./data/demoAreas.js";
 import { samplePath } from "./scene/buildDrawn.js";
 import HallSizeCard from "./components/HallSizeCard.jsx";
 import TopBar from "./components/TopBar.jsx";
@@ -94,13 +96,16 @@ export default function Logistica() {
   const skipFitRef = useRef(false); // na chegada a câmera vai até a caixa, sem reenquadrar a rota
   const hall = sanitizeHall(layout.hall);
   // Estradas de pessoas: o GPS prefere andar nelas (as rotas logísticas são das empilhadeiras).
+  const stationsKey = JSON.stringify(layout.areas.map((a) => [a.points, a.type, a.aircraft]));
   const roadsKey = JSON.stringify(layout.paths.filter((p) => p.type === "pedestrian").map((p) => [p.points, p.width]));
   const grid = useMemo(() => {
     const roads = layout.paths
       .filter((p) => p.type === "pedestrian" && p.points?.length >= 2)
       .map((p) => ({ points: samplePath(p.points).map(({ x, z }) => ({ x, z })), width: p.width || pathTypes.pedestrian.width }));
-    return buildGrid(hallBounds(hall), layout.kanbans, roads);
-  }, [kanbanPositions, roadsKey, hall.width, hall.depth]); // eslint-disable-line react-hooks/exhaustive-deps
+    // estações (gabarito + peça) também são obstáculos: o GPS contorna
+    const stations = layout.areas.map(stationObstacle).filter(Boolean);
+    return buildGrid(hallBounds(hall), [...layout.kanbans, ...stations], roads);
+  }, [kanbanPositions, roadsKey, stationsKey, hall.width, hall.depth]); // eslint-disable-line react-hooks/exhaustive-deps
   // Com uma busca ativa, o destino é o kanban mais perto que tem o material.
   // Situação do produto em cada kanban (o melhor, se o kanban tiver mais de um código que bate).
   const stockByKanban = new Map();
@@ -321,6 +326,11 @@ export default function Logistica() {
     setLayout((p) => ({ ...p, kanbans: p.kanbans.map((k) => k.id !== kanban.id ? k : { ...k, slots: k.slots.map((s) => s.id !== slot.id ? s : { ...s, code: item.code, name: item.name, qty: item.qty, unit: item.unit, checkedAt: new Date().toISOString() }) }) }));
     setNotice(item.code + " adicionado em " + kanban.id + " · " + slot.id);
   };
+  // Área: nome, tipo de estação, aeronave e etapa da montagem.
+  const updateArea = (id, patch) => {
+    if (viewOnly) return;
+    setLayout((p) => ({ ...p, areas: p.areas.map((a) => (a.id === id ? { ...a, ...patch } : a)) }));
+  };
   const renameKanban = (id, name) => {
     if (viewOnly) return;
     setLayout((p) => ({ ...p, kanbans: p.kanbans.map((k) => k.id === id ? { ...k, name } : k) }));
@@ -359,7 +369,7 @@ export default function Logistica() {
         areas: [...p.areas, { id, name: "Área " + (p.areas.length + 1), points }],
       }));
       setSelected(id);
-      setNotice("Área adicionada ao layout.");
+      setNotice("Área adicionada: escolha a estação (fuselagem, asa, cauda…) no card ao lado.");
     } else if (toolRef.current === "path" && points.length >= 2) {
       const id = "R-" + String(Date.now()).slice(-4);
       const config = pathTypes[pathTypeRef.current];
@@ -567,6 +577,7 @@ export default function Logistica() {
           onRotateKanban={rotateKanban}
           onOpenKanban={openKanban}
           onPathWidth={setPathWidth}
+          onUpdateArea={updateArea}
           onRemove={removeSelected}
         />
         <TrackCard layout={layout} selected={selected} selectedSlotId={selectedSlotId} onOpenKanban={openKanban} />
@@ -604,6 +615,14 @@ export default function Logistica() {
           onRemoveItem={removeItem}
           onExportBackup={exportBackup}
           onImportBackup={importBackup}
+          onDemoAreas={() => {
+            const examples = demoAreas(hallBounds(layout.hall)).filter((a) => !layout.areas.some((b) => b.id === a.id));
+            if (!examples.length) return setNotice("As estações de exemplo já estão no hangar.");
+            setLayout((p) => ({ ...p, areas: [...p.areas, ...examples] }));
+            setInventoryOpen(false);
+            setSelected(examples[0].id);
+            setNotice("Estações de exemplo criadas: fuselagem do KC-390 e montagem final do Super Tucano.");
+          }}
           onDemoContents={() => {
             setLayout((p) => ({ ...p, kanbans: demoHangar(p.kanbans) }));
             setSelected(null);

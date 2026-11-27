@@ -1,8 +1,8 @@
 import { useState } from "react";
-import { Download, FlaskConical, LayoutGrid, Package, Upload, X } from "lucide-react";
+import { Download, FlaskConical, LayoutGrid, Package, Plane, Upload, X } from "lucide-react";
 
 // Gaveta "Materiais": cadastro de itens, backup e lista completa do estoque.
-export default function InventoryDrawer({ layout, viewOnly, onClose, onAddItem, onRemoveItem, onExportBackup, onImportBackup, onDemoStock, onDemoContents, onOpenKanban }) {
+export default function InventoryDrawer({ layout, viewOnly, onClose, onAddItem, onRemoveItem, onExportBackup, onImportBackup, onDemoStock, onDemoContents, onDemoAreas, onOpenKanban }) {
   // Botões de exemplo pedem um segundo clique: "stock" | "contents" | null
   const [confirmDemo, setConfirmDemo] = useState(null);
   const demoButton = (kind, Icon, label, title, action) => (
@@ -137,6 +137,11 @@ export default function InventoryDrawer({ layout, viewOnly, onClose, onAddItem, 
               "Troca o conteúdo de todas as caixas por materiais de exemplo (rebites, porcas, parafusos, brocas…)",
               onDemoContents,
             )}
+          {!viewOnly && onDemoAreas && (
+            <button type="button" className="log-btn ghost" onClick={onDemoAreas} title="Acrescenta uma estação de fuselagem do KC-390 e uma de montagem final do Super Tucano">
+              <Plane size={15} /> Criar estações de exemplo
+            </button>
+          )}
           {!viewOnly &&
             onDemoStock &&
             demoButton(

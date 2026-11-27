@@ -46,9 +46,10 @@ export function buildGrid(bounds, kanbans = [], roads = [], cell = ROUTE.cell) {
     [Math.max(0, Math.floor((lo.z - minZ) / cell)), Math.min(rows - 1, Math.ceil((hi.z - minZ) / cell))],
   ];
 
-  const hx = ROUTE.rackHalfX + ROUTE.clearance,
-    hz = ROUTE.rackHalfZ + ROUTE.clearance;
+  // kanbans: estantes (tamanho padrão). Outros obstáculos (estações) trazem halfX/halfZ próprios.
   for (const k of kanbans) {
+    const hx = (k.halfX ?? ROUTE.rackHalfX) + ROUTE.clearance,
+      hz = (k.halfZ ?? ROUTE.rackHalfZ) + ROUTE.clearance;
     const r = ((k.rotation || 0) * Math.PI) / 180;
     const cos = Math.cos(r),
       sin = Math.sin(r);
