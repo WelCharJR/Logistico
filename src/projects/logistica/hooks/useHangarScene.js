@@ -10,6 +10,7 @@ import { disposeFadeClones, findOccluders, ownersOf, setRackOpacity } from "../s
 import { buildAreaMesh, buildPath } from "../scene/buildDrawn.js";
 import { buildAreaDecor } from "../scene/buildAreaDecor.js";
 import { buildStationModel, createTimelapse } from "../scene/buildStation.js";
+import { stageChangePhases, sweepProgress, timelapsePhases } from "../scene/stageSweep.js";
 import { applyPose, buildWorkers, workerPose } from "../scene/buildWorkers.js";
 import { createDayNight } from "../scene/dayNight.js";
 import { createPreview } from "../scene/createPreview.js";
@@ -198,6 +199,55 @@ export function useHangarScene({
       drawnMeshes.push(root);
       drawnById.set(id, { key, root });
     };
+    // Varreduras da peça (plano de corte): o timelapse pedido pelo app (timelapseRef: { id, ms,
+    // onTick, onDone }) e a troca curta de etapa quando o progresso cruza 34% ou 80%. Enquanto
+    // varre, o modelo de verdade some e entra o modelo cortado; no fim, volta o de verdade.
+    const sweeps = new Map(); // id da área -> { model, phases, start, request?, lastTick }
+    const stationOf = (root) => root?.children.find((c) => c.userData.station);
+    const endSweep = (id, finished) => {
+      const sweep = sweeps.get(id);
+      if (!sweep) return;
+      scene.remove(sweep.model.group);
+      sweep.model.dispose();
+      const station = stationOf(drawnById.get("area:" + id)?.root);
+      if (station) station.visible = true;
+      sweeps.delete(id);
+      if (finished) sweep.request?.onDone?.();
+    };
+    const startSweep = (area, phases, request = null) => {
+      endSweep(area.id, false);
+      const model = phases.length ? createTimelapse(area) : null;
+      if (!model) return false;
+      scene.add(model.group);
+      sweeps.set(area.id, { model, phases, start: performance.now(), request, lastTick: 0 });
+      return true;
+    };
+    let timelapseRequest = null;
+    const updateSweeps = (time) => {
+      const request = timelapseRef?.current || null;
+      if (request !== timelapseRequest) {
+        if (timelapseRequest && sweeps.get(timelapseRequest.id)?.request === timelapseRequest) endSweep(timelapseRequest.id, false);
+        timelapseRequest = request;
+        const area = request && layoutRef.current.areas.find((a) => a.id === request.id);
+        const real = area && sanitizeArea(area).stage;
+        if (request && !(area && startSweep(area, timelapsePhases(real, { ms: request.ms, reducedMotion }), request))) {
+          timelapseRef.current = timelapseRequest = null;
+          request.onDone?.();
+        }
+      }
+      sweeps.forEach((sweep, id) => {
+        const station = stationOf(drawnById.get("area:" + id)?.root); // a área pode ter sido refeita no meio
+        if (station) station.visible = false;
+        const { progress, done } = sweepProgress(sweep.phases, time - sweep.start);
+        sweep.model.setProgress(progress);
+        sweep.model.update(time, { reducedMotion });
+        if (sweep.request && (time - sweep.lastTick > 100 || done)) {
+          sweep.lastTick = time;
+          sweep.request.onTick?.(progress);
+        }
+        if (done) endSweep(id, true);
+      });
+    };
     const syncDrawn = (areas, paths) => {
       const seen = new Set();
       const kanbans = layoutRef.current.kanbans;
@@ -206,6 +256,7 @@ export function useHangarScene({
         seen.add(id);
         const a = sanitizeArea(area);
         const state = stationState(area, kanbans);
+        const before = stationOf(drawnById.get(id)?.root)?.userData.station;
         // refaz a área só se mudar algo que aparece: forma, peça, etapa, nome, progresso ou andon
         putDrawn(id, JSON.stringify([a.points, a.type, a.aircraft, a.stage, a.name, Math.round(a.progress), state.status]), () => {
           const root = new THREE.Group();
@@ -216,6 +267,9 @@ export function useHangarScene({
           if (station) root.add(station, buildWorkers(area, state.status));
           return root;
         });
+        // cruzou de etapa (ex.: esqueleto -> revestimento): varredura curta em vez de trocar seco
+        const sameModel = before && before.type === a.type && before.aircraft === a.aircraft;
+        if (!reducedMotion && sameModel && before.stage !== a.stage && !sweeps.get(area.id)?.request) startSweep(area, stageChangePhases(before.stage, a.stage));
       });
       paths.forEach((path) => {
         if (path.points.length < 2) return;
@@ -690,49 +744,6 @@ export function useHangarScene({
         setRackOpacity(g, next);
       });
     };
-    // Timelapse da montagem: o app pede por timelapseRef ({ id, ms, onTick, onDone }); a peça de
-    // verdade some e entra um modelo que vai sendo montado de 0 a 100% (os operadores trabalham).
-    let timelapse = null;
-    const stationOf = (root) => root?.children.find((c) => c.userData.station);
-    const endTimelapse = (finished) => {
-      if (!timelapse) return;
-      const { request, model } = timelapse;
-      scene.remove(model.group);
-      model.dispose();
-      const station = stationOf(drawnRoot(request.id));
-      if (station) station.visible = true;
-      timelapse = null;
-      if (finished) request.onDone?.();
-    };
-    const updateTimelapse = (time) => {
-      const request = timelapseRef?.current || null;
-      if (timelapse && timelapse.request !== request) endTimelapse(false);
-      if (!timelapse && request) {
-        const area = layoutRef.current.areas.find((a) => a.id === request.id);
-        const model = area && createTimelapse(area);
-        if (!model) {
-          timelapseRef.current = null;
-          request.onDone?.();
-          return;
-        }
-        scene.add(model.group);
-        timelapse = { request, model, startedAt: time, lastTick: 0 };
-      }
-      if (!timelapse) return;
-      const { model } = timelapse;
-      const current = timelapse.request;
-      const station = stationOf(drawnRoot(current.id)); // a área pode ter sido refeita no meio
-      if (station) station.visible = false;
-      const elapsed = time - timelapse.startedAt;
-      const progress = Math.min(100, (elapsed / (current.ms || 14000)) * 100);
-      model.setProgress(progress);
-      model.update(time, { reducedMotion });
-      if (time - timelapse.lastTick > 100 || progress >= 100) {
-        timelapse.lastTick = time;
-        current.onTick?.(progress);
-      }
-      if (elapsed > (current.ms || 14000) + 1500) endTimelapse(true); // segura a peça pronta um pouco
-    };
     const noMarks = new Set();
     const timer = new THREE.Timer();
     timer.connect(document);
@@ -808,12 +819,12 @@ export function useHangarScene({
       flow?.update(time);
       supply?.update(time);
       dayNight.update(Math.min(0.1, timer.getDelta()), dayModeRef?.current || "day");
-      updateTimelapse(time);
+      updateSweeps(time);
       if (workers.size) {
         const t = time / 1000;
         workers.forEach((w) => {
           const data = w.userData.worker;
-          const busy = timelapse && w.parent?.parent === drawnRoot(timelapse.request.id);
+          const busy = timelapseRequest && sweeps.get(timelapseRequest.id)?.request && w.parent?.parent === drawnRoot(timelapseRequest.id);
           w.visible = busy || data.staffed;
           if (w.visible) applyPose(w, workerPose(busy ? "work" : data.mode, t, data.seed, { reducedMotion }));
         });
@@ -849,7 +860,7 @@ export function useHangarScene({
       sceneApiRef.current = null;
       if (flow) flow.dispose();
       if (supply) supply.dispose();
-      endTimelapse(false);
+      [...sweeps.keys()].forEach((id) => endSweep(id, false));
       dayNight.dispose();
       racks.forEach((g) => {
         setRackOpacity(g, 1);

@@ -113,7 +113,7 @@ export default function TopBar({
         )}
       </div>
 
-      <p className="log-notice" role="status" title={notice}>
+      <p className="log-notice" role="status" title={notice} key={notice}>
         {notice}
       </p>
 

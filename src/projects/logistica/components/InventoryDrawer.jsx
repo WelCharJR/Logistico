@@ -1,10 +1,31 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Download, FlaskConical, LayoutGrid, Package, Plane, Upload, X } from "lucide-react";
 
 // Gaveta "Materiais": cadastro de itens, backup e lista completa do estoque.
 export default function InventoryDrawer({ layout, viewOnly, onClose, onAddItem, onRemoveItem, onExportBackup, onImportBackup, onDemoStock, onDemoContents, onDemoAreas, onOpenKanban }) {
   // Botões de exemplo pedem um segundo clique: "stock" | "contents" | null
   const [confirmDemo, setConfirmDemo] = useState(null);
+  // Linhas saindo: encolhem (200 ms) e só então o item é removido, para a lista não pular.
+  const [leaving, setLeaving] = useState(() => new Set());
+  const pending = useRef(new Map()); // chave -> timer de garantia
+  const finishRemove = (kanbanId, slotId) => {
+    const key = kanbanId + slotId;
+    if (!pending.current.has(key)) return; // já removido (as duas transições terminam)
+    clearTimeout(pending.current.get(key));
+    pending.current.delete(key);
+    onRemoveItem(kanbanId, slotId);
+    setLeaving((s) => {
+      const next = new Set(s);
+      next.delete(key);
+      return next;
+    });
+  };
+  const startRemove = (kanbanId, slotId) => {
+    const key = kanbanId + slotId;
+    if (pending.current.has(key)) return;
+    pending.current.set(key, setTimeout(() => finishRemove(kanbanId, slotId), 400)); // garantia se o transitionend não vier
+    setLeaving((s) => new Set(s).add(key));
+  };
   const demoButton = (kind, Icon, label, title, action) => (
     <button
       type="button"
@@ -157,7 +178,13 @@ export default function InventoryDrawer({ layout, viewOnly, onClose, onAddItem, 
         <div className="log-inventory">
           {inventory.length ? (
             inventory.map(({ kanban, slot }) => (
-              <div key={kanban.id + slot.id}>
+              <div
+                key={kanban.id + slot.id}
+                className="log-inv-row"
+                data-leaving={leaving.has(kanban.id + slot.id) || undefined}
+                onTransitionEnd={(e) => e.target === e.currentTarget && leaving.has(kanban.id + slot.id) && finishRemove(kanban.id, slot.id)}
+              >
+                <div className="log-inv-cols">
                 <button className="log-inv-main" onClick={() => onOpenKanban(kanban.id, slot.id)}>
                   <b>{slot.code}</b>
                   <small>
@@ -168,10 +195,11 @@ export default function InventoryDrawer({ layout, viewOnly, onClose, onAddItem, 
                   {slot.qty} {slot.unit}
                 </em>
                 {!viewOnly && (
-                  <button className="log-inv-remove" aria-label={"Remover " + slot.code + " de " + slot.id} onClick={() => onRemoveItem(kanban.id, slot.id)}>
+                  <button className="log-inv-remove" aria-label={"Remover " + slot.code + " de " + slot.id} onClick={() => startRemove(kanban.id, slot.id)} disabled={leaving.has(kanban.id + slot.id)}>
                     <X size={14} />
                   </button>
                 )}
+                </div>
               </div>
             ))
           ) : (

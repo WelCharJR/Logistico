@@ -98,6 +98,9 @@
 .log-result-head .log-stock-badge { flex: none; }
 @media (min-width: 900px) { .log-search-results { min-width: 400px; } }
 .log-notice { flex: 1 1 auto; min-width: 0; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 12px; }
+/* aviso novo entra de leve (o texto troca bastante: movimento quase imperceptível) */
+.log-notice { transition: opacity 180ms var(--ease-out), transform 180ms var(--ease-out); }
+@starting-style { .log-notice { opacity: 0; transform: translateY(3px); } }
 .log-site { display: flex; align-items: center; gap: 9px; flex: none; padding: 5px 12px 5px 5px; border: 1px solid var(--line); border-radius: 11px; background: #fff; }
 .log-site-badge { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 8px; background: var(--blue); color: #fff; font-size: 10px; font-weight: 800; }
 .log-site b { display: block; font-size: 12px; }
@@ -400,7 +403,9 @@
 .log-backup label { position: relative; overflow: hidden; cursor: pointer; }
 .log-backup input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
 .log-inventory { display: grid; gap: 4px; }
-.log-inventory > div { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 8px; padding: 4px 4px 4px 0; border-bottom: 1px solid var(--line); }
+.log-inv-row { display: grid; grid-template-rows: 1fr; opacity: 1; transition: grid-template-rows 200ms var(--ease-out), opacity 200ms var(--ease-out); }
+.log-inv-row[data-leaving] { grid-template-rows: 0fr; opacity: 0; pointer-events: none; }
+.log-inv-cols { min-height: 0; overflow: hidden; display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 8px; padding: 4px 4px 4px 0; border-bottom: 1px solid var(--line); }
 .log-inv-main { display: block; min-width: 0; padding: 6px 8px; border: 0; border-radius: 8px; background: transparent; text-align: left; }
 .log-inv-main:hover { background: var(--blue-soft); }
 .log-inv-main b { display: block; font-size: 12.5px; color: var(--blue); }
@@ -523,7 +528,16 @@
   .log-spin, .log-nav-dot::after, .log-andon i.on { animation: none !important; }
   .log-rail button span { transform: translateY(-50%) !important; }
   .log-btn:active, .log-icon-btn:active { transform: none !important; }
+  .log-hold-fill { transition-property: clip-path !important; }
+  .log-notice { transform: none !important; }
+  @starting-style { .log-notice { transform: none !important; } }
 }
+
+/* Segurar para confirmar (remover área/caminho): a faixa enche em 2 s; soltar desfaz em 200 ms */
+.log-hold { position: relative; overflow: hidden; isolation: isolate; touch-action: none; user-select: none; -webkit-user-select: none; }
+.log-hold-fill { position: absolute; inset: 0; z-index: -1; background: #f8c9c9; clip-path: inset(0 100% 0 0); transition: clip-path 200ms var(--ease-out); }
+.log-hold.holding .log-hold-fill { clip-path: inset(0 0 0 0); transition: clip-path 2s linear; }
+.log-hold-label { display: inline-flex; align-items: center; gap: 7px; }
 
 /* Timelapse da montagem (card da área) */
 .log-timelapse { margin: 4px 0 8px; }

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import HoldButton from "./HoldButton.jsx";
 import { ClipboardCheck, Clapperboard, Navigation, Plus, RotateCcw, RotateCw, Square, Trash2, X } from "lucide-react";
 import { AIRCRAFT, AREA_TYPES, STAGES, hasModel, hasStage, presetSize, sanitizeArea, stageFromProgress, stationFit } from "../scene/stationLayout.js";
 import { STATION_STATUS, stationState } from "../data/stationStatus.js";
@@ -289,9 +290,9 @@ export default function AreaCard({ area: rawArea, kanbans, viewOnly, onClose, on
         })()}
       {!viewOnly && <p className="log-hall-note">Com a área selecionada: arraste para mover, WASD empurra, R gira.</p>}
       {!viewOnly && (
-        <button className="log-btn danger wide" onClick={onRemove}>
-          <Trash2 size={15} /> Remover área
-        </button>
+        <HoldButton className="log-btn danger wide" onConfirm={onRemove} label="Segure para remover a área" title="Segure para remover (não dá para desfazer)">
+          <Trash2 size={15} /> Segure para remover área
+        </HoldButton>
       )}
     </aside>
   );

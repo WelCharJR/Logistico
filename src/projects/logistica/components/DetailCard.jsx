@@ -1,6 +1,7 @@
 import { Maximize2, RotateCcw, RotateCw, Trash2, X } from "lucide-react";
 import { pathTypes } from "../constants.js";
 import AreaCard from "./AreaCard.jsx";
+import HoldButton from "./HoldButton.jsx";
 
 const occupancy = (k) => k.slots.filter((s) => s.code).length;
 
@@ -181,9 +182,9 @@ export default function DetailCard({
           )}
         </dl>
         {!viewOnly && (
-          <button className="log-btn danger wide" onClick={onRemove}>
-            <Trash2 size={15} /> Remover {path ? "caminho" : "área"}
-          </button>
+          <HoldButton className="log-btn danger wide" onConfirm={onRemove} label={"Segure para remover " + (path ? "o caminho" : "a área")} title="Segure para remover (não dá para desfazer)">
+            <Trash2 size={15} /> Segure para remover {path ? "caminho" : "área"}
+          </HoldButton>
         )}
       </aside>
     );
