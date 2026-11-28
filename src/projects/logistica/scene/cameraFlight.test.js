@@ -39,15 +39,18 @@ test("trajeto: sobe em voos longos, gira pelo lado mais curto e sem saltos", () 
     const f = createFlight({ ...A, angle: 0.1 }, { ...A, angle: -0.1 + Math.PI * 2 }, 0);
     near(flightAt(f, f.duration).angle, -0.1);
   }
-  // movimento é suave: sem saltos entre quadros
+  // movimento é suave: nenhum quadro anda mais que a inclinação máxima da curva (~5x a média), sem saltos
   {
     const f = createFlight(A, B, 0);
+    const frames = Math.ceil(f.duration / 16);
+    const avg = Math.hypot(B.x - A.x, B.z - A.z) / frames;
     let prev = flightAt(f, 0);
     for (let t = 16; t <= f.duration; t += 16) {
       const cur = flightAt(f, t);
-      assert.ok(Math.hypot(cur.x - prev.x, cur.z - prev.z) < 1.5, "salto em " + t);
+      assert.ok(Math.hypot(cur.x - prev.x, cur.z - prev.z) < avg * 5.5, "salto em " + t);
       prev = cur;
     }
+    assert.ok(f.duration <= 1000, "voo frequente: no máximo 1 s");
   }
 });
 

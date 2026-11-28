@@ -112,7 +112,7 @@ export function createHoverFx(
       current = bin;
       if (!bin) return;
       retarget(stateOf(bin).tween, 1, now, MOTION.pullMs);
-      if (!reducedMotion) burst(bin, now);
+      // sem peças no hover: ele acontece centenas de vezes; as peças ficam para o clique (abrir)
     },
 
     open(bin, now) {
@@ -120,7 +120,9 @@ export function createHoverFx(
       const closing = bins.get(openBin);
       if (closing) retarget(closing.openTween, 0, now, MOTION.openMs);
       openBin = bin || null;
-      if (openBin) retarget(stateOf(openBin).openTween, 1, now, MOTION.openMs);
+      if (!openBin) return;
+      retarget(stateOf(openBin).openTween, 1, now, MOTION.openMs);
+      if (!reducedMotion && isFilled(openBin.userData.kanbanId, openBin.userData.slotId)) burst(openBin, now);
     },
 
     opened: () => openBin,

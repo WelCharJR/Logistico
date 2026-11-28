@@ -36,7 +36,7 @@ export default function KpiCards({ layout }) {
             <b>{value}</b>
             {bar !== undefined ? (
               <span className="log-kpi-bar" aria-hidden="true">
-                <i style={{ width: bar + "%" }} />
+                <i style={{ clipPath: `inset(0 ${100 - (bar)}% 0 0 round 99px)` }} />
               </span>
             ) : (
               <em>{sub}</em>

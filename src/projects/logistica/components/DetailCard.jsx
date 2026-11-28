@@ -67,7 +67,7 @@ export default function DetailCard({
             </b>
           </div>
           <span className="log-bar">
-            <i style={{ width: pct + "%" }} />
+            <i style={{ clipPath: `inset(0 ${100 - (pct)}% 0 0 round 99px)` }} />
           </span>
         </div>
         <dl className="log-facts">

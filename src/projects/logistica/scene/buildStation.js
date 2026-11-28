@@ -754,8 +754,8 @@ export function createTimelapse(rawArea) {
     get stage() {
       return last.stage;
     },
-    update(time) {
-      SCAN.opacity = 0.16 + 0.1 * (0.5 + 0.5 * Math.sin(time / 140));
+    update(time, { reducedMotion = false } = {}) {
+      SCAN.opacity = reducedMotion ? 0.2 : 0.16 + 0.1 * (0.5 + 0.5 * Math.sin(time / 140)); // pulso só decorativo
     },
     dispose() {
       owned.forEach((m) => m.dispose());

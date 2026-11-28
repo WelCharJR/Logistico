@@ -3,6 +3,8 @@
    A cena 3D ocupa a tela inteira; a interface flutua por cima em cards.
    ========================================================================= */
 .log-app {
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
   --bg: #e4ebf5;
   --card: rgba(255, 255, 255, 0.94);
   --line: #e4e9f2;
@@ -37,7 +39,8 @@
 .log-empty { margin: 0; padding: 12px 4px; color: var(--muted); font-size: 12px; }
 
 /* ---------- botões ---------- */
-.log-btn { display: inline-flex; align-items: center; justify-content: center; gap: 7px; height: 38px; padding: 0 14px; border-radius: 10px; border: 1px solid transparent; font-weight: 650; font-size: 13px; white-space: nowrap; transition: background-color 0.15s, border-color 0.15s, transform 0.15s; }
+.log-btn { display: inline-flex; align-items: center; justify-content: center; gap: 7px; height: 38px; padding: 0 14px; border-radius: 10px; border: 1px solid transparent; font-weight: 650; font-size: 13px; white-space: nowrap; transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease, transform 160ms var(--ease-out); }
+.log-btn:active:not(:disabled), .log-icon-btn:active { transform: scale(0.97); }
 .log-btn.primary { background: var(--blue); color: #fff; box-shadow: 0 4px 12px rgba(47, 85, 228, 0.28); }
 .log-btn.primary:hover:not(:disabled) { background: #2649cc; }
 .log-btn.ghost { background: #fff; border-color: var(--line-strong); color: var(--ink); }
@@ -45,7 +48,7 @@
 .log-btn.danger { background: #fff1f1; color: var(--red); border-color: #f6d0d0; }
 .log-btn.danger:hover { background: #ffe4e4; }
 .log-btn.wide { width: 100%; }
-.log-icon-btn { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 10px; border: 1px solid var(--line-strong); background: #fff; color: var(--faint); transition: all 0.15s; }
+.log-icon-btn { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 10px; border: 1px solid var(--line-strong); background: #fff; color: var(--faint); transition: border-color 150ms ease, color 150ms ease, background-color 150ms ease, transform 160ms var(--ease-out); }
 .log-icon-btn.on { color: var(--blue); background: var(--blue-soft); border-color: #cdd9ff; }
 .log-icon-btn.on.view { color: #fff; background: var(--green); border-color: var(--green); }
 .log-icon-btn:hover { border-color: var(--blue); }
@@ -100,8 +103,7 @@
 .log-site b { display: block; font-size: 12px; }
 .log-site small { display: block; font-size: 10.5px; color: var(--muted); }
 .log-live { display: inline-flex; align-items: center; gap: 7px; flex: none; height: 30px; padding: 0 11px; border-radius: 999px; background: var(--green-soft); color: var(--green); font-size: 12px; font-weight: 700; }
-.log-live i { width: 7px; height: 7px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 0 rgba(31, 157, 92, 0.5); animation: log-pulse 2.2s infinite; }
-@keyframes log-pulse { 0% { box-shadow: 0 0 0 0 rgba(31, 157, 92, 0.45); } 70% { box-shadow: 0 0 0 7px rgba(31, 157, 92, 0); } 100% { box-shadow: 0 0 0 0 rgba(31, 157, 92, 0); } }
+.log-live i { width: 7px; height: 7px; border-radius: 50%; background: var(--green); }
 .log-actions { display: flex; align-items: center; gap: 6px; flex: none; }
 
 /* ---------- indicadores ---------- */
@@ -112,7 +114,7 @@
 .log-kpi b { display: block; margin: 1px 0 2px; font-size: 20px; font-weight: 800; letter-spacing: -0.02em; line-height: 1.15; }
 .log-kpi em { display: block; font-style: normal; font-size: 10.5px; color: var(--faint); }
 .log-kpi-bar { display: block; width: 96px; height: 5px; margin-top: 5px; border-radius: 99px; background: #e8edf6; overflow: hidden; }
-.log-kpi-bar i, .log-bar i, .log-row-bar i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #5b7ff5, var(--blue)); transition: width 0.4s cubic-bezier(0.23, 1, 0.32, 1); }
+.log-kpi-bar i, .log-bar i, .log-row-bar i { display: block; width: 100%; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #5b7ff5, var(--blue)); transition: clip-path 250ms var(--ease-out); }
 
 /* ---------- trilhos de ferramentas ---------- */
 .log-rail { position: absolute; z-index: 5; display: flex; flex-direction: column; gap: 4px; padding: 6px; background: var(--card); backdrop-filter: blur(10px); border-radius: 14px; box-shadow: var(--shadow); }
@@ -120,8 +122,8 @@
 .log-rail button:hover { background: #f1f4fa; color: var(--ink); }
 .log-rail button.active { background: var(--blue); color: #fff; box-shadow: 0 4px 10px rgba(47, 85, 228, 0.3); }
 .log-rail button.active.soft { background: var(--blue-soft); color: var(--blue); box-shadow: none; }
-.log-rail button span { position: absolute; left: calc(100% + 10px); top: 50%; transform: translateY(-50%) translateX(-4px); padding: 5px 8px; border-radius: 7px; background: var(--ink); color: #fff; font-size: 11.5px; font-weight: 600; white-space: nowrap; opacity: 0; pointer-events: none; transition: opacity 0.15s, transform 0.15s; }
-.log-rail button:hover span { opacity: 1; transform: translateY(-50%); }
+.log-rail button span { position: absolute; left: calc(100% + 10px); top: 50%; transform: translateY(-50%) translateX(-4px); padding: 5px 8px; border-radius: 7px; background: var(--ink); color: #fff; font-size: 11.5px; font-weight: 600; white-space: nowrap; opacity: 0; pointer-events: none; transition: opacity 150ms var(--ease-out), transform 150ms var(--ease-out); }
+@media (hover: hover) and (pointer: fine) { .log-rail button:hover span { opacity: 1; transform: translateY(-50%); } }
 .log-rail-sep { display: block; height: 1px; margin: 2px 6px; background: var(--line); }
 .log-tools { top: calc(var(--gap) + 160px); left: var(--gap); }
 .log-view-rail { top: calc(var(--gap) + 72px); right: calc(var(--gap) + 340px + 12px); }
@@ -203,7 +205,8 @@
 .log-jig button:hover { border-color: var(--blue); color: var(--blue); }
 .log-jig-interval { display: flex; align-items: center; justify-content: space-between; font-size: 11.5px; color: var(--muted); }
 .log-jig-interval select { height: 28px; border: 1px solid var(--line-strong); border-radius: 7px; background: #fff; font: inherit; font-size: 12px; }
-.log-preset-card { z-index: 12; top: calc(var(--gap) + 160px); left: calc(var(--gap) + 66px); width: 330px; display: grid; gap: 12px; padding: 16px; background: #fff; animation: log-pop 0.22s cubic-bezier(0.23, 1, 0.32, 1); }
+.log-preset-card { z-index: 12; top: calc(var(--gap) + 160px); left: calc(var(--gap) + 66px); width: 330px; display: grid; gap: 12px; padding: 16px; background: #fff; transform-origin: left top; transition: opacity 220ms var(--ease-out), transform 220ms var(--ease-out); }
+@starting-style { .log-preset-card { opacity: 0; transform: translateY(6px) scale(0.98); } }
 .log-preset-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 .log-preset-grid button { position: relative; display: grid; gap: 2px; justify-items: start; padding: 9px 10px 9px 24px; border: 1px solid var(--line); border-radius: 11px; background: #fff; text-align: left; }
 .log-preset-grid button i { position: absolute; left: 10px; top: 13px; width: 8px; height: 8px; border-radius: 3px; background: var(--tone); }
@@ -294,7 +297,7 @@
 .log-steps li::before { content: ""; position: absolute; top: 15px; left: calc(-50% + 18px); right: calc(50% + 18px); height: 3px; border-radius: 3px; background: #e3e8f1; }
 .log-steps li:first-child::before { display: none; }
 .log-steps li.done::before, .log-steps li.current::before { background: var(--blue); }
-.log-step-dot { display: grid; place-items: center; width: 32px; height: 32px; margin-bottom: 4px; border-radius: 50%; background: #eef2f8; color: var(--faint); border: 2px solid #fff; box-shadow: 0 0 0 1px #e3e8f1; transition: all 0.25s; }
+.log-step-dot { display: grid; place-items: center; width: 32px; height: 32px; margin-bottom: 4px; border-radius: 50%; background: #eef2f8; color: var(--faint); border: 2px solid #fff; box-shadow: 0 0 0 1px #e3e8f1; transition: background-color 200ms ease, color 200ms ease, box-shadow 200ms ease; }
 .log-steps li.done .log-step-dot { background: var(--blue); color: #fff; box-shadow: none; }
 .log-steps li.current .log-step-dot { background: #fff; color: var(--blue); box-shadow: 0 0 0 3px var(--blue), 0 4px 12px rgba(47, 85, 228, 0.35); }
 .log-steps b { font-size: 11.5px; }
@@ -311,7 +314,8 @@
 .log-track-item > button:hover { color: var(--blue); border-color: var(--blue); }
 
 /* ---------- tamanho do hangar ---------- */
-.log-hall-card { z-index: 12; top: calc(var(--gap) + 72px); right: var(--gap); width: 340px; display: grid; gap: 14px; padding: 16px; background: #fff; animation: log-pop 0.22s cubic-bezier(0.23, 1, 0.32, 1); }
+.log-hall-card { z-index: 12; top: calc(var(--gap) + 72px); right: var(--gap); width: 340px; display: grid; gap: 14px; padding: 16px; background: #fff; transform-origin: right top; transition: opacity 220ms var(--ease-out), transform 220ms var(--ease-out); }
+@starting-style { .log-hall-card { opacity: 0; transform: translateY(6px) scale(0.98); } }
 .log-presets { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .log-presets button { display: grid; gap: 1px; padding: 9px 11px; border: 1px solid var(--line-strong); border-radius: 11px; background: #fff; text-align: left; transition: border-color 0.15s, background-color 0.15s; }
 .log-presets button b { font-size: 13px; }
@@ -327,7 +331,8 @@
 .log-hall-note svg { vertical-align: -2px; margin-right: 3px; }
 
 /* GPS da demonstração */
-.log-nav-card { z-index: 12; top: calc(var(--gap) + 160px); left: calc(var(--gap) + 66px); width: 340px; max-height: calc(100% - 360px); overflow: auto; display: grid; gap: 12px; padding: 16px; background: #fff; animation: log-pop 0.22s cubic-bezier(0.23, 1, 0.32, 1); }
+.log-nav-card { z-index: 12; top: calc(var(--gap) + 160px); left: calc(var(--gap) + 66px); width: 340px; max-height: calc(100% - 360px); overflow: auto; display: grid; gap: 12px; padding: 16px; background: #fff; transform-origin: left top; transition: opacity 220ms var(--ease-out), transform 220ms var(--ease-out); }
+@starting-style { .log-nav-card { opacity: 0; transform: translateY(6px) scale(0.98); } }
 .log-nav-locating, .log-nav-me, .log-nav-banner { display: flex; align-items: center; gap: 11px; }
 .log-nav-locating { padding: 12px; border-radius: 12px; background: var(--blue-soft); color: var(--blue); }
 .log-nav-locating b, .log-nav-me b, .log-nav-banner b { display: block; font-size: 13px; color: var(--ink); }
@@ -358,7 +363,7 @@
 .log-stock-dot.tone-red { background: #e5484d; }
 .log-stock-dot.tone-gray { background: #98a2b3; }
 .log-nav-mixbar { height: 6px; border-radius: 99px; overflow: hidden; background: repeating-linear-gradient(90deg, #c9d6ff 0 6px, #eef2ff 6px 10px); }
-.log-nav-mixbar span { display: block; height: 100%; background: var(--blue); border-radius: 99px; transition: width 0.3s; }
+.log-nav-mixbar span { display: block; width: 100%; height: 100%; background: var(--blue); border-radius: 99px; transition: clip-path 250ms var(--ease-out); }
 .log-nav-mix small { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; font-size: 11.5px; color: var(--muted); }
 .log-nav-mix i { width: 14px; height: 6px; border-radius: 3px; margin-left: 4px; }
 .log-nav-mix i:first-child { margin-left: 0; }
@@ -378,7 +383,7 @@
 .log-nav-others button.active b { color: var(--blue); }
 
 /* ---------- gaveta de materiais ---------- */
-.log-drawer-backdrop { position: absolute; inset: 0; z-index: 25; background: rgba(29, 36, 51, 0.18); animation: log-fade 0.2s ease; }
+.log-drawer-backdrop { position: absolute; inset: 0; z-index: 25; background: rgba(29, 36, 51, 0.18); animation: log-fade 200ms var(--ease-out); }
 .log-drawer { position: absolute; top: var(--gap); right: var(--gap); bottom: var(--gap); width: 380px; max-width: calc(100% - 2 * var(--gap)); display: flex; flex-direction: column; gap: 14px; padding: 18px; overflow: auto; background: #fff; border-radius: var(--radius); box-shadow: 0 24px 60px rgba(24, 39, 75, 0.25); animation: log-slide 0.28s cubic-bezier(0.23, 1, 0.32, 1); }
 .log-drawer > header { display: flex; align-items: flex-start; justify-content: space-between; }
 .log-drawer h3 { margin: 2px 0 0; font-size: 18px; font-weight: 800; }
@@ -404,7 +409,7 @@
 .log-inv-remove { display: grid; place-items: center; width: 26px; height: 26px; border: 0; border-radius: 7px; background: #fff1f1; color: var(--red) !important; }
 
 /* ---------- modal do kanban ---------- */
-.kanban-backdrop { position: absolute; inset: 0; z-index: 30; display: grid; place-items: center; padding: 20px; overflow: auto; background: rgba(29, 36, 51, 0.35); backdrop-filter: blur(3px); animation: log-fade 0.2s ease; }
+.kanban-backdrop { position: absolute; inset: 0; z-index: 30; display: grid; place-items: center; padding: 20px; overflow: auto; background: rgba(29, 36, 51, 0.35); backdrop-filter: blur(3px); animation: log-fade 200ms var(--ease-out); }
 .kanban-modal { width: min(1180px, 100%); max-height: 100%; overflow: auto; background: #fff; color: var(--ink); border-radius: 20px; box-shadow: 0 30px 80px rgba(24, 39, 75, 0.3); animation: log-pop 0.25s cubic-bezier(0.23, 1, 0.32, 1); }
 @keyframes log-pop { from { transform: translateY(10px) scale(0.98); opacity: 0; } }
 .kanban-modal > header { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 18px 22px; border-bottom: 1px solid var(--line); }
@@ -509,8 +514,15 @@
   .log-steps small { display: none; }
   .kanban-slot-editor { grid-template-columns: 1fr; }
 }
+/* Reduzir movimento: some o deslocamento, fica o fade (e as cores). Não é "zero animação". */
 @media (prefers-reduced-motion: reduce) {
-  .log-app *, .log-app *::before, .log-app *::after { animation: none !important; transition: none !important; }
+  .log-app *, .log-app *::before, .log-app *::after { transition-property: opacity, color, background-color, border-color, box-shadow !important; }
+  .log-preset-card, .log-hall-card, .log-nav-card, .log-drawer, .kanban-modal { transform: none !important; }
+  @starting-style { .log-preset-card, .log-hall-card, .log-nav-card, .log-drawer, .kanban-modal { transform: none !important; } }
+  .log-drawer, .kanban-modal { animation: log-fade 200ms ease !important; }
+  .log-spin, .log-nav-dot::after, .log-andon i.on { animation: none !important; }
+  .log-rail button span { transform: translateY(-50%) !important; }
+  .log-btn:active, .log-icon-btn:active { transform: none !important; }
 }
 
 /* Timelapse da montagem (card da área) */
@@ -519,5 +531,5 @@
 .log-timelapse-head b { color: var(--ink); }
 .log-btn.small { padding: 4px 9px; font-size: 12px; min-height: 0; }
 .log-timelapse-bar { position: relative; height: 8px; border-radius: 99px; background: #e6ebf3; overflow: hidden; }
-.log-timelapse-bar i { position: absolute; inset: 0 auto 0 0; background: linear-gradient(90deg, #b3c26b, #c5ccd5 55%, #2f55e4); border-radius: 99px; transition: width 0.1s linear; }
+.log-timelapse-bar i { position: absolute; inset: 0 auto 0 0; background: linear-gradient(90deg, #b3c26b, #c5ccd5 55%, #2f55e4); width: 100%; border-radius: 99px; transition: clip-path 100ms linear; }
 .log-timelapse-bar span { position: absolute; top: 0; bottom: 0; width: 2px; background: #fff; opacity: 0.9; }

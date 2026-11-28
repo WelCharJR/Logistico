@@ -61,40 +61,47 @@ test("hover: puxa a caixa, devolve ao sair e troca de caixa sem salto", () => {
 });
 
 test("peças: só em caixa ocupada, 6 por disparo, pausa por caixa e pool limitado", () => {
-  // caixa ocupada solta 6 peças (3 porcas e 3 parafusos), sem repetir no mesmo hover
+  // passar o mouse não solta nada (o hover acontece centenas de vezes)
+  {
+    const { fx, makeBin, visible } = setup();
+    fx.hover(makeBin(), 0);
+    assert.equal(visible(), 0);
+  }
+  // abrir uma caixa ocupada solta 6 peças (3 porcas e 3 parafusos), sem repetir na mesma caixa aberta
   {
     const { fx, makeBin, visible } = setup();
     const bin = makeBin();
-    fx.hover(bin, 0);
+    fx.open(bin, 0);
     assert.equal(visible(), 6);
-    fx.hover(bin, 10);
+    fx.open(bin, 10);
     assert.equal(visible(), 6);
   }
-  // caixa vazia não puxa e não solta nada
+  // caixa vazia não puxa no hover e não solta nada ao abrir
   {
     const { fx, makeBin, visible } = setup({ isFilled: () => false });
     const bin = makeBin();
     fx.hover(bin, 0); fx.update(0); fx.update(200);
     assert.equal(bin.position.z, BASE);
+    fx.open(bin, 300);
     assert.equal(visible(), 0);
   }
   // pausa de 600 ms por caixa entre disparos
   {
     const { fx, makeBin, visible } = setup();
     const bin = makeBin();
-    fx.hover(bin, 0);
-    fx.hover(null, 100);
-    fx.hover(bin, 200);
+    fx.open(bin, 0);
+    fx.open(null, 100);
+    fx.open(bin, 200);
     assert.equal(visible(), 6);
-    fx.hover(null, 300);
-    fx.hover(bin, 700);
+    fx.open(null, 300);
+    fx.open(bin, 700);
     assert.equal(visible(), 12);
   }
   // pool de 30 peças: o sexto disparo simultâneo é ignorado
   {
     const { fx, makeBin, visible, fxObjects } = setup();
     const bins = Array.from({ length: 6 }, (_, i) => makeBin(`A-${i + 1}`, i));
-    bins.forEach((bin, i) => fx.hover(bin, i * 10));
+    bins.forEach((bin, i) => fx.open(bin, i * 10));
     assert.equal(visible(), 30);
     assert.equal(fxObjects(), 30);
   }
@@ -102,11 +109,11 @@ test("peças: só em caixa ocupada, 6 por disparo, pausa por caixa e pool limita
   {
     const { fx, makeBin, visible, fxObjects, run } = setup();
     const bin = makeBin();
-    fx.hover(bin, 0);
+    fx.open(bin, 0);
     run(0, 1600);
     assert.equal(visible(), 0);
-    fx.hover(null, 1700);
-    fx.hover(bin, 2000);
+    fx.open(null, 1700);
+    fx.open(bin, 2000);
     assert.equal(visible(), 6);
     assert.equal(fxObjects(), 30);
   }
@@ -117,7 +124,7 @@ test("peças: nascem acima da caixa, caem e somem com fade", () => {
   {
     const { scene, fx, makeBin, run } = setup();
     const bin = makeBin();
-    fx.hover(bin, 0);
+    fx.open(bin, 0);
     run(0, 1300);
     const opacities = [];
     scene.children.filter((o) => o.userData.fx && o.visible).forEach((o) =>
@@ -129,7 +136,7 @@ test("peças: nascem acima da caixa, caem e somem com fade", () => {
   {
     const { scene, fx, makeBin, run } = setup();
     const bin = makeBin();
-    fx.hover(bin, 0);
+    fx.open(bin, 0);
     const first = scene.children.find((o) => o.userData.fx && o.visible);
     fx.update(0);
     assert.ok(first.position.y > 1.1, `y inicial ${first.position.y}`);

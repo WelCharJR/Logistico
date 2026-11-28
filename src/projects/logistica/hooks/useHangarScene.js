@@ -726,7 +726,7 @@ export function useHangarScene({
       const elapsed = time - timelapse.startedAt;
       const progress = Math.min(100, (elapsed / (current.ms || 14000)) * 100);
       model.setProgress(progress);
-      model.update(time);
+      model.update(time, { reducedMotion });
       if (time - timelapse.lastTick > 100 || progress >= 100) {
         timelapse.lastTick = time;
         current.onTick?.(progress);

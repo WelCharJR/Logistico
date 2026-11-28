@@ -1,18 +1,21 @@
 // Voo da câmera entre dois enquadramentos { x, z, angle, radius, y? } (y = altura do ponto mirado, padrão 0).
 // Sem Three.js, para poder ser testado direto no Node.
+import { cubicBezier } from "./hoverMotion.js";
 //   createFlight(from, to, now, { reducedMotion }) -> voo (ou null quando não há o que animar)
 //   flightAt(flight, now) -> { x, z, angle, radius, done }
 
 export const FLIGHT = {
-  minMs: 650,
-  maxMs: 1500,
-  msPerUnit: 14, // trajetos longos demoram um pouco mais
+  // o voo acontece dezenas de vezes por dia (duplo clique, busca, lista): curto e decidido
+  minMs: 450,
+  maxMs: 1000,
+  msPerUnit: 9, // trajetos longos demoram um pouco mais
   hopFrom: 8, // abaixo disso não sobe no meio do caminho
   hopPerUnit: 0.35,
   maxHop: 28,
 };
 
-export const easeInOutCubic = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
+// ease-in-out forte para movimento na tela (a cúbica padrão é fraca demais)
+export const easeInOut = cubicBezier(0.77, 0, 0.175, 1);
 
 // Ângulo de chegada equivalente a `to`, mas pelo caminho mais curto a partir de `from`.
 export function shortestAngle(from, to) {
@@ -37,7 +40,7 @@ export function createFlight(from, to, now, { reducedMotion = false } = {}) {
 
 export function flightAt(flight, now) {
   const raw = flight.duration > 0 ? Math.min(1, Math.max(0, (now - flight.start) / flight.duration)) : 1;
-  const e = easeInOutCubic(raw);
+  const e = easeInOut(raw);
   const lerp = (a, b) => a + (b - a) * e;
   return {
     x: lerp(flight.from.x, flight.to.x),

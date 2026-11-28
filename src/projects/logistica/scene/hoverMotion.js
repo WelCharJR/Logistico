@@ -10,7 +10,7 @@ export const MOTION = {
   reducedOpenDistance: 0.3,
   openLift: 0.05,
   openTilt: 0.16,
-  openMs: 320,
+  openMs: 260, // abaixo de 300 ms: abre num clique repetido
   cooldownMs: 600,
   burstCount: 6,
   poolSize: 30,

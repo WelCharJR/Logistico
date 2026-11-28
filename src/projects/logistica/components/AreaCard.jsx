@@ -261,7 +261,7 @@ export default function AreaCard({ area: rawArea, kanbans, viewOnly, onClose, on
                 </button>
               </div>
               <div className="log-timelapse-bar">
-                <i style={{ width: timelapse.progress + "%" }} />
+                <i style={{ clipPath: `inset(0 ${100 - (timelapse.progress)}% 0 0 round 99px)` }} />
                 <span style={{ left: "34%" }} />
                 <span style={{ left: "80%" }} />
               </div>

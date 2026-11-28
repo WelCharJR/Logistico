@@ -142,7 +142,7 @@ export default function NavCard({
 
               <div className="log-nav-mix">
                 <div className="log-nav-mixbar" aria-hidden="true">
-                  <span style={{ width: roadShare * 100 + "%" }} />
+                  <span style={{ clipPath: `inset(0 ${100 - (roadShare * 100)}% 0 0 round 99px)` }} />
                 </div>
                 <small>
                   <i className="road" /> Pela estrada {meters(route.roadLength)}

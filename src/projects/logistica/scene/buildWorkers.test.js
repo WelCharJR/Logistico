@@ -15,7 +15,7 @@ test("quantos operadores cada situação põe na estação", () => {
 });
 
 test("pose: trabalhando bate a rebitadeira com faíscas; esperando olha em volta; parado fica quieto", () => {
-  const frames = (mode, opts) => Array.from({ length: 60 }, (_, i) => workerPose(mode, i * 0.05, 1, opts));
+  const frames = (mode, opts) => Array.from({ length: 200 }, (_, i) => workerPose(mode, i * 0.05, 1, opts));
   const work = frames("work");
   assert.ok(work.every((p) => p.armR < -0.9), "braço da ferramenta levantado");
   assert.ok(work.some((p) => p.spark) && work.some((p) => !p.spark), "faísca pisca");
@@ -23,7 +23,8 @@ test("pose: trabalhando bate a rebitadeira com faíscas; esperando olha em volta
   assert.ok(swing > 0.2, "braço batendo");
   const wait = frames("wait");
   assert.ok(wait.every((p) => !p.spark && p.armR > -0.3), "braços abaixados");
-  assert.ok(Math.max(...wait.map((p) => Math.abs(p.turn))) > 0.4, "vira a cabeça/corpo");
+  const look = Math.max(...wait.map((p) => Math.abs(p.turn)));
+  assert.ok(look > 0.15 && look <= 0.4, "olha para os lados, sem girar demais: " + look);
   const stand = frames("stand");
   assert.ok(stand.every((p) => !p.spark && p.turn === 0 && Math.abs(p.bob) < 0.01));
   // reduzir movimento: pose fixa e sem faísca

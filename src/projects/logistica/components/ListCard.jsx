@@ -69,7 +69,7 @@ export default function ListCard({ layout, selected, onPick }) {
               </span>
               {r.bar !== undefined && (
                 <span className="log-row-bar" aria-hidden="true">
-                  <i style={{ width: r.bar + "%" }} />
+                  <i style={{ clipPath: `inset(0 ${100 - (r.bar)}% 0 0 round 99px)` }} />
                 </span>
               )}
               <span className={"log-pill " + r.tone}>{r.pill}</span>

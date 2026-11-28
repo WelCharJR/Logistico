@@ -39,7 +39,7 @@ export function workerPose(mode, t, seed = 0, { reducedMotion = false } = {}) {
     };
   }
   if (mode === "wait") {
-    return { bob: 0, lean: 0, armR: -0.08, armL: -0.08, turn: 0.85 * Math.sin(time * 0.5 + seed * 1.7), spark: false };
+    return { bob: 0, lean: 0, armR: -0.08, armL: -0.08, turn: 0.35 * Math.sin(time * 0.35 + seed * 1.7), spark: false };
   }
   // parado: quase imóvel, só a respiração
   return { bob: 0.006 * Math.sin(time * 1.6 + seed), lean: -0.02, armR: 0, armL: 0, turn: 0, spark: false };
