@@ -98,6 +98,14 @@ export function stockAlerts(kanbans, now = Date.now()) {
   return countStatus(states, (s) => s.status);
 }
 
+// Selo da barra de cima: alertas (acabando + acabou) com a cor da pior situação.
+export function alertBadge({ low = 0, out = 0, unknown = 0 } = {}) {
+  const n = low + out;
+  if (n) return { label: n + (n === 1 ? " alerta" : " alertas"), tone: out ? "red" : "amber" };
+  if (unknown) return { label: unknown + " sem conferência", tone: "gray" };
+  return { label: "Estoque ok", tone: "ok" };
+}
+
 // Texto curto da última conferência.
 export function checkedText(days) {
   if (days === null || days === undefined) return "nunca conferida";

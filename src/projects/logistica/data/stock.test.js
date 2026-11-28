@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { STOCK, checkedText, countStatus, daysSince, demoStock, groupResults, kanbanStock, minOf, slotStatus, stockAlerts } from "./stock.js";
+import { STOCK, checkedText, countStatus, daysSince, demoStock, groupResults, kanbanStock, minOf, slotStatus, stockAlerts, alertBadge } from "./stock.js";
 
 const NOW = Date.parse("2026-11-26T12:00:00Z");
 const ago = (days) => new Date(NOW - days * 86400000).toISOString();
@@ -89,4 +89,12 @@ test("alertas do hangar e estoque de exemplo", () => {
     for (const status of ["full", "low", "out", "unknown"]) assert.ok(counts[status] + (status === "full" ? counts.ok : 0) > 0, status);
     assert.deepEqual(a[0].slots.at(-1), { id: "X", code: "", qty: 0 });
   }
+});
+
+test("selo de alertas da barra: cor pela pior situação, texto curto", () => {
+  assert.deepEqual(alertBadge({ low: 1, out: 1, unknown: 3 }), { label: "2 alertas", tone: "red" });
+  assert.deepEqual(alertBadge({ low: 1, out: 0, unknown: 0 }), { label: "1 alerta", tone: "amber" });
+  assert.deepEqual(alertBadge({ low: 0, out: 0, unknown: 2 }), { label: "2 sem conferência", tone: "gray" });
+  assert.deepEqual(alertBadge({ low: 0, out: 0, unknown: 0 }), { label: "Estoque ok", tone: "ok" });
+  assert.deepEqual(alertBadge({}), { label: "Estoque ok", tone: "ok" });
 });

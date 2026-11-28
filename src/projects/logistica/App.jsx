@@ -9,7 +9,8 @@ import AreaPresetCard from "./components/AreaPresetCard.jsx";
 import { stationDefaults, stationState, STATION_STATUS } from "./data/stationStatus.js";
 import { ROUTE, buildGrid, rankKanbans, routeSteps } from "./scene/route.js";
 import NavCard from "./components/NavCard.jsx";
-import { STATUS, demoStock, groupResults } from "./data/stock.js";
+import { STATUS, alertBadge, demoStock, groupResults, stockAlerts } from "./data/stock.js";
+import { List } from "lucide-react";
 import { demoHangar } from "./data/demoContents.js";
 import { demoAreas } from "./data/demoAreas.js";
 import { samplePath } from "./scene/buildDrawn.js";
@@ -74,6 +75,23 @@ export default function Logistica() {
   const presetRef = useRef(null);
   // Dia e noite (dia, noite ou ciclo) e timelapse da montagem de uma estação.
   const [dayMode, setDayMode] = useState("day");
+  // Tela limpa: a ajuda abre sozinha só na primeira visita; a lista fica recolhida até pedir.
+  const [helpOpen, setHelpOpen] = useState(() => {
+    try {
+      return !localStorage.getItem("logistico:help-seen");
+    } catch {
+      return false;
+    }
+  });
+  const closeHelp = () => {
+    setHelpOpen(false);
+    try {
+      localStorage.setItem("logistico:help-seen", "1");
+    } catch {
+      /* navegador sem armazenamento: só fecha */
+    }
+  };
+  const [listOpen, setListOpen] = useState(false);
   const dayModeRef = useRef("day");
   dayModeRef.current = dayMode;
   const timelapseRef = useRef(null);
@@ -684,6 +702,10 @@ export default function Logistica() {
         hallOpen={hallOpen}
         onOpenNav={() => (navOpen ? closeNav() : openNav())}
         navOpen={navOpen}
+        badge={alertBadge(stockAlerts(layout.kanbans))}
+        kpiPanel={<KpiCards layout={layout} panel />}
+        helpOpen={helpOpen}
+        onToggleHelp={() => (helpOpen ? closeHelp() : setHelpOpen(true))}
       />
       <ScenePanel
         canvasRef={canvas}
@@ -701,8 +723,8 @@ export default function Logistica() {
         onCancel={cancelDrawing}
         onZoom={(amount) => zoomRef.current(amount)}
         onResetView={() => resetView()}
+        showKeyHelp={!viewOnly && !!selected && tool === "select"}
       />
-      <KpiCards layout={layout} />
       <div className="log-cards">
         <DetailCard
           layout={layout}
@@ -722,9 +744,20 @@ export default function Logistica() {
           onTimelapse={startTimelapse}
           onStopTimelapse={stopTimelapse}
           onRemove={removeSelected}
+          showHelp={helpOpen}
+          onCloseHelp={closeHelp}
         />
-        <TrackCard layout={layout} selected={selected} selectedSlotId={selectedSlotId} onOpenKanban={openKanban} />
-        <ListCard layout={layout} selected={selected} onPick={pickFromList} />
+        {layout.kanbans.some((k) => k.id === selected) && <TrackCard layout={layout} selected={selected} selectedSlotId={selectedSlotId} onOpenKanban={openKanban} />}
+        {listOpen ? (
+          <ListCard layout={layout} selected={selected} onPick={pickFromList} onClose={() => setListOpen(false)} />
+        ) : (
+          <button className="log-card log-list-pill" onClick={() => setListOpen(true)} title="Abrir a lista de kanbans, áreas e caminhos">
+            <List size={16} /> Lista
+            <small>
+              {layout.kanbans.length} kanbans · {layout.areas.length} áreas
+            </small>
+          </button>
+        )}
       </div>
       {navOpen && (
         <NavCard

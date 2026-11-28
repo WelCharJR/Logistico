@@ -17,6 +17,7 @@ export default function ScenePanel({
   onCancel,
   onZoom,
   onResetView,
+  showKeyHelp = false,
 }) {
   const drawing = !viewOnly && tool !== "select";
   return (
@@ -92,9 +93,7 @@ export default function ScenePanel({
         </button>
       </nav>
 
-      <div className="log-key-help">
-        {viewOnly ? "Visualização · clique para selecionar · dois cliques para enquadrar" : "Arraste kanbans · R girar · WASD mover · Shift passo maior"}
-      </div>
+      {showKeyHelp && <div className="log-key-help">R girar · WASD mover · Shift passo maior</div>}
 
       {drawing && cursorScreen && (
         <div className="log-crosshair" style={{ left: cursorScreen.x, top: cursorScreen.y }}>

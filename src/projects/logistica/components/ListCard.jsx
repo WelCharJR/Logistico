@@ -1,11 +1,11 @@
 import { useState } from "react";
-import { ChevronRight } from "lucide-react";
+import { ChevronRight, X } from "lucide-react";
 import { pathTypes } from "../constants.js";
 import { AIRCRAFT, AREA_TYPES, hasModel, hasStage, sanitizeArea } from "../scene/stationLayout.js";
 import { STATION_STATUS, stationState } from "../data/stationStatus.js";
 
 // Lista do layout em abas (canto inferior direito). Clicar seleciona e leva a câmera até o item.
-export default function ListCard({ layout, selected, onPick }) {
+export default function ListCard({ layout, selected, onPick, onClose }) {
   const [tab, setTab] = useState("kanbans");
   const tabs = [
     ["kanbans", "Kanbans", layout.kanbans.length],
@@ -57,6 +57,11 @@ export default function ListCard({ layout, selected, onPick }) {
             {label} <em>{count}</em>
           </button>
         ))}
+        {onClose && (
+          <button className="log-close log-tabs-close" onClick={onClose} aria-label="Recolher lista" title="Recolher lista">
+            <X size={15} />
+          </button>
+        )}
       </div>
       <div className="log-rows">
         {rows.length ? (

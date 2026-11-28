@@ -2,7 +2,7 @@ import { Boxes, Gauge, LayoutGrid, Package, TriangleAlert } from "lucide-react";
 import { stockAlerts } from "../data/stock.js";
 
 // Indicadores do hangar calculados a partir do layout salvo.
-export default function KpiCards({ layout }) {
+export default function KpiCards({ layout, panel = false }) {
   const slots = layout.kanbans.flatMap((k) => k.slots);
   const filled = slots.filter((s) => s.code);
   const occupancy = slots.length ? Math.round((filled.length / slots.length) * 100) : 0;
@@ -25,7 +25,7 @@ export default function KpiCards({ layout }) {
     tone: alerts.out ? "red" : alerts.low ? "amber" : alerts.unknown ? "gray" : "",
   });
   return (
-    <div className="log-kpis">
+    <div className={panel ? "log-kpis log-kpis-panel" : "log-kpis"}>
       {cards.map(({ icon: Icon, label, value, sub, bar, tone }) => (
         <div className={"log-kpi" + (tone ? " tone-" + tone : "")} key={label}>
           <span className="log-kpi-icon" aria-hidden="true">

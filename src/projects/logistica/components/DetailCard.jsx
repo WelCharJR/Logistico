@@ -25,6 +25,8 @@ export default function DetailCard({
   onTimelapse = () => {},
   onStopTimelapse = () => {},
   onRemove,
+  showHelp = false,
+  onCloseHelp = () => {},
 }) {
   const kanban = layout.kanbans.find((k) => k.id === selected);
   const path = layout.paths.find((p) => p.id === selected);
@@ -190,6 +192,7 @@ export default function DetailCard({
     );
   }
 
+  if (!showHelp) return null;
   return (
     <aside className="log-card log-detail-card log-legend">
       <header>
@@ -197,6 +200,9 @@ export default function DetailCard({
           <span className="log-eyebrow">Como usar</span>
           <h3>Selecione um kanban</h3>
         </div>
+        <button className="log-close" onClick={onCloseHelp} aria-label="Fechar ajuda">
+          <X size={16} />
+        </button>
       </header>
       <p>Clique em uma estante ou em uma caixa para ver os detalhes. Dois cliques aproximam a câmera.</p>
       <ul>
