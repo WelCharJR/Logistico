@@ -20,6 +20,9 @@ export default function DetailCard({
   onRotateArea = () => {},
   onFitArea = () => {},
   onRouteToArea = () => {},
+  timelapse = null,
+  onTimelapse = () => {},
+  onStopTimelapse = () => {},
   onRemove,
 }) {
   const kanban = layout.kanbans.find((k) => k.id === selected);
@@ -127,6 +130,9 @@ export default function DetailCard({
         onRotate={onRotateArea}
         onFit={onFitArea}
         onRoute={onRouteToArea}
+        timelapse={timelapse?.id === area.id ? timelapse : null}
+        onTimelapse={onTimelapse}
+        onStopTimelapse={onStopTimelapse}
         onRemove={onRemove}
       />
     );

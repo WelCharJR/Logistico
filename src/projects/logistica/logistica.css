@@ -512,3 +512,12 @@
 @media (prefers-reduced-motion: reduce) {
   .log-app *, .log-app *::before, .log-app *::after { animation: none !important; transition: none !important; }
 }
+
+/* Timelapse da montagem (card da área) */
+.log-timelapse { margin: 4px 0 8px; }
+.log-timelapse-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12.5px; color: var(--muted, #5b6474); margin-bottom: 6px; }
+.log-timelapse-head b { color: var(--ink); }
+.log-btn.small { padding: 4px 9px; font-size: 12px; min-height: 0; }
+.log-timelapse-bar { position: relative; height: 8px; border-radius: 99px; background: #e6ebf3; overflow: hidden; }
+.log-timelapse-bar i { position: absolute; inset: 0 auto 0 0; background: linear-gradient(90deg, #b3c26b, #c5ccd5 55%, #2f55e4); border-radius: 99px; transition: width 0.1s linear; }
+.log-timelapse-bar span { position: absolute; top: 0; bottom: 0; width: 2px; background: #fff; opacity: 0.9; }

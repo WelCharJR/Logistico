@@ -32,6 +32,16 @@ export const hasStage = (type) => hasModel(type) && type !== "jigs";
 export const STAGE_PROGRESS = { skeleton: 15, skin: 55, complete: 100 };
 export const stageFromProgress = (p) => (p < 34 ? "skeleton" : p < 80 ? "skin" : "complete");
 
+// Timelapse: em que etapa o progresso está (1 esqueleto, 2 revestimento, 3 completa) e quanto
+// dela já foi "varrido" (0..1). A etapa anterior continua visível na parte ainda não varrida.
+const SWEEP = [[0, 34], [34, 80], [80, 100]];
+export function sweepAt(progress) {
+  const p = Math.max(0, Math.min(100, Number(progress) || 0));
+  const index = p < 34 ? 1 : p < 80 ? 2 : 3;
+  const [lo, hi] = SWEEP[index - 1];
+  return { index, stage: ["skeleton", "skin", "complete"][index - 1], f: (p - lo) / (hi - lo) };
+}
+
 // Com progresso definido, a etapa em 3D acompanha o progresso; sem ele, vale a etapa salva.
 export function sanitizeArea(area = {}) {
   const stage = STAGES[area.stage] ? area.stage : "skeleton";

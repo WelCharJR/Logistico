@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { FOOTPRINT, hasModel, hasStage, orientedRect, sanitizeArea, stationFit, stationObstacle } from "./stationLayout.js";
-import { clampCenter, fitAreaToStation, moveArea, presetSize, rectPoints, rotateArea } from "./stationLayout.js";
+import { clampCenter, fitAreaToStation, moveArea, presetSize, rectPoints, rotateArea, stageFromProgress, sweepAt } from "./stationLayout.js";
 
 const near = (a, b, eps = 1e-6) => assert.ok(Math.abs(a - b) <= eps, `${a} ≉ ${b}`);
 const rectPts = (x0, z0, x1, z1) => [{ x: x0, z: z0 }, { x: x1, z: z0 }, { x: x1, z: z1 }, { x: x0, z: z1 }];
@@ -119,4 +119,18 @@ test("mover, girar, ajustar ao tamanho e prender dentro do hangar", () => {
     const r = clampCenter(0, 21, 10, 4, Math.PI / 2, b); // girada: comprimento em z
     near(r.z, 22 - 0.5 - 5);
   }
+});
+
+test("timelapse: progresso vira etapa + quanto dela já foi varrido", () => {
+  const near = (a, b) => assert.ok(Math.abs(a - b) < 1e-9, `${a} != ${b}`);
+  const at = (p) => sweepAt(p);
+  assert.deepEqual([at(0).index, at(0).f], [1, 0]);
+  near(at(17).f, 0.5);
+  assert.equal(at(33.9).stage, "skeleton");
+  assert.deepEqual([at(34).index, at(34).f, at(34).stage], [2, 0, "skin"]);
+  near(at(57).f, 0.5);
+  assert.deepEqual([at(80).index, at(80).f, at(80).stage], [3, 0, "complete"]);
+  assert.deepEqual([at(100).index, at(100).f], [3, 1]);
+  assert.deepEqual([at(150).f, at(-5).f, at("x").f], [1, 0, 0]); // fora da faixa ou inválido
+  for (let p = 0; p <= 100; p += 5) assert.equal(at(p).stage, stageFromProgress(p), "etapa igual à do progresso em " + p);
 });

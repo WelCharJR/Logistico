@@ -1,5 +1,11 @@
 import { useEffect, useState } from "react";
-import { Boxes, CircleHelp, Eye, Grid3x3, Layers, Navigation, Package, PackageCheck, PackageX, Plus, Ruler, Search, TriangleAlert, X } from "lucide-react";
+import { Boxes, CircleHelp, Eye, Grid3x3, Layers, Moon, Navigation, Package, PackageCheck, PackageX, Plus, Ruler, Search, Sun, SunMoon, TriangleAlert, X } from "lucide-react";
+
+const DAY = {
+  day: { icon: Sun, title: "Dia · clique para noite" },
+  night: { icon: Moon, title: "Noite · clique para o ciclo de dia e noite" },
+  cycle: { icon: SunMoon, title: "Ciclo de dia e noite (1 dia = 2 min) · clique para dia" },
+};
 import { STATUS, checkedText, countStatus } from "../data/stock.js";
 
 const STATUS_ICON = { full: PackageCheck, ok: PackageCheck, low: TriangleAlert, out: PackageX, unknown: CircleHelp };
@@ -25,6 +31,8 @@ export default function TopBar({
   onToggleViewOnly,
   showGrid,
   showStructure,
+  dayMode = "day",
+  onCycleDayMode = () => {},
   onToggleGrid,
   onToggleStructure,
   onAddKanban,
@@ -127,6 +135,14 @@ export default function TopBar({
         <button className={"log-icon-btn" + (showStructure ? " on" : "")} onClick={onToggleStructure} aria-pressed={showStructure} title={showStructure ? "Ocultar estrutura" : "Mostrar estrutura"}>
           <Layers size={17} />
         </button>
+        {(() => {
+          const { icon: Icon, title } = DAY[dayMode] || DAY.day;
+          return (
+            <button className={"log-icon-btn" + (dayMode !== "day" ? " on" : "")} onClick={onCycleDayMode} aria-pressed={dayMode !== "day"} title={title} aria-label={title}>
+              <Icon size={17} />
+            </button>
+          );
+        })()}
         <button className={"log-icon-btn" + (viewOnly ? " on view" : "")} onClick={onToggleViewOnly} aria-pressed={viewOnly} title={viewOnly ? "Sair do modo visualização" : "Modo visualização"}>
           <Eye size={17} />
         </button>

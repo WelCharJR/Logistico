@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { COLORS, mat } from "./theme.js";
-import { FOOTPRINT, hasModel, sanitizeArea, stationFit } from "./stationLayout.js";
+import { FOOTPRINT, hasModel, sanitizeArea, stationFit, sweepAt } from "./stationLayout.js";
 
 // Estação de montagem em 3D: gabarito + peça do avião (KC-390 ou Super Tucano) + entorno.
 //   buildStationModel(area) -> THREE.Group posicionado/escalado dentro da área (ou null)
@@ -39,6 +39,10 @@ function put(group, geometry, material, { position, quaternion, scale } = {}) {
   if (scale) mesh.scale.copy(scale);
   group.add(mesh);
   return mesh;
+}
+// Lugar onde um operador pode ficar: posição e direção para onde ele olha (no plano).
+function spot(g, x, y, z, dx, dz, kind = "platform") {
+  (g.userData.spots ??= []).push({ x, y, z, dx, dz, kind });
 }
 const box = (g, w, h, d, x, y, z, m) => put(g, new THREE.BoxGeometry(w, h, d), m, { position: v3(x, y, z) });
 
@@ -255,6 +259,9 @@ function platform(g, x0, x1, z, depth, height) {
     cx = (x0 + x1) / 2,
     zOut = z + Math.sign(z || 1) * depth / 2;
   box(g, len, 0.08, depth, cx, height, z, M.deck);
+  // lugares de trabalho no deck, voltados para a peça (z = 0)
+  const inward = -Math.sign(z || 1);
+  for (const t of [0.3, 0.7]) spot(g, x0 + len * t, height + 0.04, z + inward * depth * 0.12, 0, inward);
   for (const x of [x0 + 0.1, x1 - 0.1]) for (const dz of [-depth / 2 + 0.08, depth / 2 - 0.08]) box(g, 0.08, height, 0.08, x, height / 2, z + dz, M.steel);
   // guarda-corpo do lado de fora
   box(g, len, 0.05, 0.05, cx, height + 1.0, zOut, M.pad);
@@ -277,6 +284,9 @@ function bench(g, x, z, rotation = 0) {
   b.position.set(x, 0, z);
   b.rotation.y = rotation;
   g.add(b);
+  // operador do lado de fora da bancada, olhando para ela (e para a peça)
+  const out = Math.sign(z || 1);
+  spot(g, x, 0, z + out * 0.75, 0, -out, "bench");
 }
 function toolCart(g, x, z) {
   const c = new THREE.Group();
@@ -531,6 +541,7 @@ function jigsStation(g, aircraft) {
   bench(holder, 3.3, -2.6, 0);
   holder.scale.setScalar(k);
   g.add(holder);
+  for (const sp of holder.userData.spots || []) spot(g, sp.x * k, sp.y * k, sp.z * k, sp.dx, sp.dz, sp.kind);
 }
 
 // ---------------- junção por material (menos chamadas de desenho) ----------------
@@ -565,30 +576,68 @@ const BUILDERS = { fuselage: fuselageStation, wing: wingStation, tail: tailStati
 
 // Cache por tipo + aeronave + etapa: o modelo é montado e juntado uma vez só; as áreas reaproveitam
 // as mesmas geometrias (marcadas como compartilhadas, para não serem descartadas com a cena).
+const stageCache = new Map();
+function rawStage(type, aircraft, stage) {
+  const key = [type, aircraft, type === "jigs" ? "-" : stage].join("|");
+  if (!stageCache.has(key)) {
+    const local = new THREE.Group();
+    BUILDERS[type](local, aircraft, stage);
+    stageCache.set(key, { local, bounds: new THREE.Box3().setFromObject(local), spots: local.userData.spots || [] });
+  }
+  return stageCache.get(key);
+}
+// Moldura comum às três etapas: mesmo centro e mesmo tamanho, para o gabarito não "pular" quando
+// a etapa muda e para o timelapse encaixar uma etapa na outra.
+const frameCache = new Map();
+function stationBox(type, aircraft) {
+  const key = type + "|" + aircraft;
+  if (!frameCache.has(key)) {
+    const stages = type === "jigs" ? ["skeleton"] : ["skeleton", "skin", "complete"];
+    const box3 = new THREE.Box3();
+    stages.forEach((st) => box3.union(rawStage(type, aircraft, st).bounds));
+    frameCache.set(key, { center: box3.getCenter(new THREE.Vector3()), size: box3.getSize(new THREE.Vector3()), box: box3 });
+  }
+  return frameCache.get(key);
+}
 const modelCache = new Map();
 function stationParts(area) {
   const key = [area.type, area.aircraft, area.type === "jigs" ? "-" : area.stage].join("|");
   if (!modelCache.has(key)) {
-    const local = new THREE.Group();
-    BUILDERS[area.type](local, area.aircraft, area.stage);
-    // centraliza o conjunto (o modelo pode não ser simétrico)
-    const bounds = new THREE.Box3().setFromObject(local);
-    const center = bounds.getCenter(new THREE.Vector3());
+    const { local } = rawStage(area.type, area.aircraft, area.stage);
+    const { center } = stationBox(area.type, area.aircraft);
     local.position.set(-center.x, 0, -center.z);
     const merged = mergeByMaterial(local);
     const parts = merged.children.map((mesh) => {
       mesh.geometry.userData.shared = true;
       return { geometry: mesh.geometry, material: mesh.material };
     });
-    modelCache.set(key, { parts, size: bounds.getSize(new THREE.Vector3()) });
+    modelCache.set(key, parts);
   }
   return modelCache.get(key);
+}
+
+// Onde e com que escala o modelo entra na área (igual para todas as etapas).
+function stationFrame(area) {
+  const { size, center, box: box3 } = stationBox(area.type, area.aircraft);
+  const { rect, scale, modelAngle } = stationFit(area);
+  // escala pelo tamanho de verdade do conjunto (garante caber mesmo se o desenho passar do previsto)
+  const [needL, needW] = FOOTPRINT[area.aircraft][area.type];
+  const fitScale = Math.min(scale, (scale * needL) / Math.max(needL, size.x), (scale * needW) / Math.max(needW, size.z));
+  const localBox = box3.clone().translate(new THREE.Vector3(-center.x, 0, -center.z));
+  return { rect, modelAngle, fitScale, localBox };
+}
+function frameRoot(frame) {
+  const root = new THREE.Group();
+  root.scale.setScalar(frame.fitScale);
+  root.position.set(frame.rect.cx, 0, frame.rect.cz);
+  root.rotation.y = -frame.modelAngle;
+  return root;
 }
 
 export function buildStationModel(rawArea) {
   const area = sanitizeArea(rawArea);
   if (!hasModel(area.type) || !area.points?.length) return null;
-  const { parts, size } = stationParts(area);
+  const parts = stationParts(area);
   const model = new THREE.Group();
   for (const { geometry, material } of parts) {
     const mesh = new THREE.Mesh(geometry, material);
@@ -596,15 +645,121 @@ export function buildStationModel(rawArea) {
     mesh.receiveShadow = true;
     model.add(mesh);
   }
-  const { rect, scale, modelAngle } = stationFit(area);
-  // escala pelo tamanho de verdade do conjunto (garante caber mesmo se o desenho passar do previsto)
-  const [needL, needW] = FOOTPRINT[area.aircraft][area.type];
-  const fitScale = Math.min(scale, (scale * needL) / Math.max(needL, size.x), (scale * needW) / Math.max(needW, size.z));
-  const root = new THREE.Group();
+  const frame = stationFrame(area);
+  const root = frameRoot(frame);
   root.add(model);
-  root.scale.setScalar(fitScale);
-  root.position.set(rect.cx, 0, rect.cz);
-  root.rotation.y = -modelAngle;
-  root.userData.station = { type: area.type, aircraft: area.aircraft, stage: area.stage, scale: fitScale };
+  root.userData.station = { type: area.type, aircraft: area.aircraft, stage: area.stage, scale: frame.fitScale };
   return root;
+}
+
+// Lugares de trabalho da estação, já na posição da área (coordenadas do mundo), com a direção do olhar.
+export function stationSpots(rawArea) {
+  const area = sanitizeArea(rawArea);
+  if (!hasModel(area.type) || !area.points?.length) return [];
+  const { center } = stationBox(area.type, area.aircraft);
+  const frame = stationFrame(area);
+  const cos = Math.cos(-frame.modelAngle),
+    sin = Math.sin(-frame.modelAngle);
+  // rotação em torno de y (igual à do grupo): x' = x cos + z sin, z' = -x sin + z cos
+  const turn = (x, z) => ({ x: x * cos + z * sin, z: -x * sin + z * cos });
+  return rawStage(area.type, area.aircraft, area.type === "jigs" ? "-" : "skeleton").spots.map((sp) => {
+    const p = turn((sp.x - center.x) * frame.fitScale, (sp.z - center.z) * frame.fitScale);
+    const d = turn(sp.dx, sp.dz);
+    return { x: frame.rect.cx + p.x, y: sp.y * frame.fitScale, z: frame.rect.cz + p.z, heading: Math.atan2(d.x, d.z), kind: sp.kind, scale: frame.fitScale };
+  });
+}
+
+// ---------------- timelapse da montagem ----------------
+
+const PART_MATERIALS = new Set([M.primer, M.alu, M.paint, M.glass]);
+const SCAN = new THREE.MeshBasicMaterial({ color: "#7fb2ff", transparent: true, opacity: 0.22, depthWrite: false, blending: THREE.AdditiveBlending, side: DS, toneMapped: false });
+
+// Montagem contínua de 0 a 100%: cada etapa é "varrida" ao longo da peça (do nariz para a cauda,
+// ou de baixo para cima na deriva) por um plano de corte; atrás do plano fica a etapa nova, à frente
+// a anterior. A camada 0 é só o gabarito (sem peça), para o esqueleto nascer do nada.
+//   createTimelapse(area) -> { group, setProgress(p), dispose() } ou null (sem peça para montar)
+export function createTimelapse(rawArea) {
+  const area = sanitizeArea(rawArea);
+  if (!hasModel(area.type) || area.type === "jigs" || !area.points?.length) return null;
+  const frame = stationFrame(area);
+  const group = frameRoot(frame);
+  const model = new THREE.Group();
+  group.add(model);
+  const owned = [];
+  const layers = [];
+  const addLayer = (stage, onlyJig) => {
+    const plane = new THREE.Plane();
+    const layer = new THREE.Group();
+    for (const { geometry, material } of stationParts({ ...area, stage })) {
+      if (onlyJig && PART_MATERIALS.has(material)) continue;
+      const m = material.clone();
+      m.clippingPlanes = [plane];
+      m.clipShadows = true;
+      owned.push(m);
+      const mesh = new THREE.Mesh(geometry, m);
+      mesh.castShadow = mesh.receiveShadow = true;
+      layer.add(mesh);
+    }
+    layer.userData.plane = plane;
+    model.add(layer);
+    layers.push(layer);
+  };
+  addLayer("skeleton", true);
+  ["skeleton", "skin", "complete"].forEach((st) => addLayer(st, false));
+
+  // eixo da varredura no espaço do modelo
+  const box3 = frame.localBox;
+  const upward = area.type === "tail";
+  const axis = upward ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0);
+  const lo = (upward ? box3.min.y : box3.min.x) - 0.05,
+    hi = (upward ? box3.max.y : box3.max.x) + 0.05;
+  const size = box3.getSize(new THREE.Vector3());
+  // "frente de montagem": placa azul translúcida que acompanha o plano de corte
+  const scanGeo = upward ? new THREE.BoxGeometry(size.x, 0.06, size.z) : new THREE.BoxGeometry(0.06, box3.max.y + 0.2, size.z);
+  const scan = new THREE.Mesh(scanGeo, SCAN);
+  if (upward) scan.position.set((box3.min.x + box3.max.x) / 2, 0, (box3.min.z + box3.max.z) / 2);
+  else scan.position.set(0, (box3.max.y + 0.2) / 2, (box3.min.z + box3.max.z) / 2);
+  model.add(scan);
+
+  const a = new THREE.Vector3(),
+    b = new THREE.Vector3(),
+    dir = new THREE.Vector3(),
+    at = new THREE.Vector3();
+  let last = { index: 1, f: 0, stage: "skeleton" };
+  const setProgress = (p) => {
+    const s = sweepAt(p);
+    last = s;
+    group.updateMatrixWorld(true);
+    model.localToWorld(a.copy(axis).multiplyScalar(lo));
+    model.localToWorld(b.copy(axis).multiplyScalar(hi));
+    dir.subVectors(b, a);
+    at.copy(a).addScaledVector(dir, s.f);
+    dir.normalize();
+    const c = dir.dot(at);
+    layers.forEach((layer, i) => {
+      const plane = layer.userData.plane;
+      layer.visible = i === s.index || i === s.index - 1;
+      if (i === s.index) plane.set(plane.normal.copy(dir).negate(), c); // mantém o que já foi montado
+      else if (i === s.index - 1) plane.set(plane.normal.copy(dir), -c); // e a etapa anterior à frente
+    });
+    const local = lo + (hi - lo) * s.f;
+    if (upward) scan.position.y = Math.max(0.04, local);
+    else scan.position.x = local;
+    scan.visible = s.f > 0.001 && s.f < 0.999;
+  };
+  setProgress(0);
+  return {
+    group,
+    setProgress,
+    get stage() {
+      return last.stage;
+    },
+    update(time) {
+      SCAN.opacity = 0.16 + 0.1 * (0.5 + 0.5 * Math.sin(time / 140));
+    },
+    dispose() {
+      owned.forEach((m) => m.dispose());
+      scanGeo.dispose();
+    },
+  };
 }

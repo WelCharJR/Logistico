@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { ClipboardCheck, Navigation, Plus, RotateCcw, RotateCw, Trash2, X } from "lucide-react";
-import { AIRCRAFT, AREA_TYPES, STAGES, hasModel, hasStage, presetSize, sanitizeArea, stationFit } from "../scene/stationLayout.js";
+import { ClipboardCheck, Clapperboard, Navigation, Plus, RotateCcw, RotateCw, Square, Trash2, X } from "lucide-react";
+import { AIRCRAFT, AREA_TYPES, STAGES, hasModel, hasStage, presetSize, sanitizeArea, stageFromProgress, stationFit } from "../scene/stationLayout.js";
 import { STATION_STATUS, stationState } from "../data/stationStatus.js";
 import { STATUS as STOCK_STATUS, checkedText } from "../data/stock.js";
 
@@ -18,7 +18,7 @@ const MATERIAL_TONE = { full: "green", ok: "green", low: "amber", unknown: "gray
 const MATERIAL_LABEL = { ...Object.fromEntries(Object.entries(STOCK_STATUS).map(([k, v]) => [k, v.label])), missing: "Não encontrado" };
 
 // Card de uma área/estação de montagem: situação (andon), progresso, materiais, gabarito, rota.
-export default function AreaCard({ area: rawArea, kanbans, viewOnly, onClose, onUpdate, onRotate, onFit, onRoute, onRemove }) {
+export default function AreaCard({ area: rawArea, kanbans, viewOnly, onClose, onUpdate, onRotate, onFit, onRoute, onRemove, timelapse = null, onTimelapse = () => {}, onStopTimelapse = () => {} }) {
   const [newCode, setNewCode] = useState("");
   const a = sanitizeArea(rawArea);
   const fit = stationFit(a);
@@ -248,6 +248,31 @@ export default function AreaCard({ area: rawArea, kanbans, viewOnly, onClose, on
         )}
       </dl>
 
+      {model && a.type !== "jigs" && (
+        <div className="log-timelapse">
+          {timelapse ? (
+            <>
+              <div className="log-timelapse-head">
+                <span>
+                  Timelapse · <b>{Math.round(timelapse.progress)}%</b> · {STAGES[stageFromProgress(timelapse.progress)].label}
+                </span>
+                <button className="log-btn ghost small" onClick={onStopTimelapse}>
+                  <Square size={13} /> Parar
+                </button>
+              </div>
+              <div className="log-timelapse-bar">
+                <i style={{ width: timelapse.progress + "%" }} />
+                <span style={{ left: "34%" }} />
+                <span style={{ left: "80%" }} />
+              </div>
+            </>
+          ) : (
+            <button className="log-btn ghost wide" onClick={() => onTimelapse(a.id)} title="Mostra a peça sendo montada de 0 a 100% (não muda o progresso salvo)">
+              <Clapperboard size={15} /> Timelapse da montagem
+            </button>
+          )}
+        </div>
+      )}
       <button className="log-btn primary wide" onClick={() => onRoute(a.id)}>
         <Navigation size={15} /> Rota até a estação
       </button>

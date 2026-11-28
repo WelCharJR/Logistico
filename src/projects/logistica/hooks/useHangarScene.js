@@ -9,7 +9,9 @@ import { HALL_DEFAULT, hallBounds } from "../scene/hallSize.js";
 import { disposeFadeClones, findOccluders, ownersOf, setRackOpacity } from "../scene/occlusion.js";
 import { buildAreaMesh, buildPath } from "../scene/buildDrawn.js";
 import { buildAreaDecor } from "../scene/buildAreaDecor.js";
-import { buildStationModel } from "../scene/buildStation.js";
+import { buildStationModel, createTimelapse } from "../scene/buildStation.js";
+import { applyPose, buildWorkers, workerPose } from "../scene/buildWorkers.js";
+import { createDayNight } from "../scene/dayNight.js";
 import { createPreview } from "../scene/createPreview.js";
 import { createHoverFx } from "../scene/createHoverFx.js";
 import { createFlight, flightAt } from "../scene/cameraFlight.js";
@@ -46,7 +48,7 @@ export function useHangarScene({
   refs,
   setters,
 }) {
-  const { toolRef, draftRef, pathTypeRef, snapRef, layerRefs, clearPreviewRef, zoomRef, focusRef, viewRef, viewOnlyRef, marksRef, openSlotRef, navRef, selectedRef, presetRef } =
+  const { toolRef, draftRef, pathTypeRef, snapRef, layerRefs, clearPreviewRef, zoomRef, focusRef, viewRef, viewOnlyRef, marksRef, openSlotRef, navRef, selectedRef, presetRef, dayModeRef, timelapseRef } =
     refs;
   const {
     setLayout,
@@ -112,10 +114,12 @@ export function useHangarScene({
     renderer.toneMappingExposure = 1.05;
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFShadowMap;
+    renderer.localClippingEnabled = true; // timelapse da montagem corta a peça com planos
     host.appendChild(renderer.domElement);
 
     // Luz do céu + sol com sombra suave + luz de preenchimento sem sombra.
-    scene.add(new THREE.HemisphereLight(0xffffff, 0xc4cee0, 1.9));
+    const hemi = new THREE.HemisphereLight(0xffffff, 0xc4cee0, 1.9);
+    scene.add(hemi);
     const sun = new THREE.DirectionalLight(0xffffff, 2.6);
     sun.position.set(-22 * k, 38 * k, 26 * k);
     sun.castShadow = true;
@@ -148,6 +152,7 @@ export function useHangarScene({
     const media = (query) => hasMatchMedia && window.matchMedia(query).matches;
     const reducedMotion = media("(prefers-reduced-motion: reduce)");
     const props = buildProps(scene, { reducedMotion, bounds });
+    const dayNight = createDayNight({ scene, renderer, sun, hemi, fill, bounds, k, structureLayer, reducedMotion });
     structureLayer.add(props.group); // enfeites somem junto com a estrutura
     const kanbanMeshes = new Map();
     const slotGroups = [];
@@ -164,12 +169,16 @@ export function useHangarScene({
     // clicar em qualquer parte seleciona a área.
     const drawnById = new Map(); // "area:A-1" -> { key, root }
     const blinking = new Set(); // luzes do andon que piscam (amarela/vermelha)
+    const workers = new Set(); // operadores nas estações (animados no draw)
     let flow = null,
       flowKey = "";
     const removeDrawn = (id) => {
       const entry = drawnById.get(id);
       if (!entry) return;
-      entry.root.traverse((o) => blinking.delete(o));
+      entry.root.traverse((o) => {
+        blinking.delete(o);
+        workers.delete(o);
+      });
       scene.remove(entry.root);
       disposeTree(entry.root);
       drawnMeshes.splice(drawnMeshes.indexOf(entry.root), 1);
@@ -181,7 +190,10 @@ export function useHangarScene({
       removeDrawn(id);
       const root = build();
       if (!root) return;
-      root.traverse((o) => o.userData.blink && blinking.add(o));
+      root.traverse((o) => {
+        if (o.userData.blink) blinking.add(o);
+        if (o.userData.worker) workers.add(o);
+      });
       scene.add(root);
       drawnMeshes.push(root);
       drawnById.set(id, { key, root });
@@ -201,7 +213,7 @@ export function useHangarScene({
           root.userData.kind = "area";
           root.add(buildAreaMesh(area), buildAreaDecor(area, state));
           const station = buildStationModel(area);
-          if (station) root.add(station);
+          if (station) root.add(station, buildWorkers(area, state.status));
           return root;
         });
       });
@@ -678,6 +690,49 @@ export function useHangarScene({
         setRackOpacity(g, next);
       });
     };
+    // Timelapse da montagem: o app pede por timelapseRef ({ id, ms, onTick, onDone }); a peça de
+    // verdade some e entra um modelo que vai sendo montado de 0 a 100% (os operadores trabalham).
+    let timelapse = null;
+    const stationOf = (root) => root?.children.find((c) => c.userData.station);
+    const endTimelapse = (finished) => {
+      if (!timelapse) return;
+      const { request, model } = timelapse;
+      scene.remove(model.group);
+      model.dispose();
+      const station = stationOf(drawnRoot(request.id));
+      if (station) station.visible = true;
+      timelapse = null;
+      if (finished) request.onDone?.();
+    };
+    const updateTimelapse = (time) => {
+      const request = timelapseRef?.current || null;
+      if (timelapse && timelapse.request !== request) endTimelapse(false);
+      if (!timelapse && request) {
+        const area = layoutRef.current.areas.find((a) => a.id === request.id);
+        const model = area && createTimelapse(area);
+        if (!model) {
+          timelapseRef.current = null;
+          request.onDone?.();
+          return;
+        }
+        scene.add(model.group);
+        timelapse = { request, model, startedAt: time, lastTick: 0 };
+      }
+      if (!timelapse) return;
+      const { model } = timelapse;
+      const current = timelapse.request;
+      const station = stationOf(drawnRoot(current.id)); // a área pode ter sido refeita no meio
+      if (station) station.visible = false;
+      const elapsed = time - timelapse.startedAt;
+      const progress = Math.min(100, (elapsed / (current.ms || 14000)) * 100);
+      model.setProgress(progress);
+      model.update(time);
+      if (time - timelapse.lastTick > 100 || progress >= 100) {
+        timelapse.lastTick = time;
+        current.onTick?.(progress);
+      }
+      if (elapsed > (current.ms || 14000) + 1500) endTimelapse(true); // segura a peça pronta um pouco
+    };
     const noMarks = new Set();
     const timer = new THREE.Timer();
     timer.connect(document);
@@ -752,6 +807,17 @@ export function useHangarScene({
       navigator.update(time, camera);
       flow?.update(time);
       supply?.update(time);
+      dayNight.update(Math.min(0.1, timer.getDelta()), dayModeRef?.current || "day");
+      updateTimelapse(time);
+      if (workers.size) {
+        const t = time / 1000;
+        workers.forEach((w) => {
+          const data = w.userData.worker;
+          const busy = timelapse && w.parent?.parent === drawnRoot(timelapse.request.id);
+          w.visible = busy || data.staffed;
+          if (w.visible) applyPose(w, workerPose(busy ? "work" : data.mode, t, data.seed, { reducedMotion }));
+        });
+      }
       if (blinking.size) {
         // andon piscando devagar (aceso/meio apagado), sem piscar se "reduzir movimento"
         const k = reducedMotion ? 1 : 0.35 + 0.65 * (0.5 + 0.5 * Math.sin((time / 1000) * Math.PI * 1.6));
@@ -783,6 +849,8 @@ export function useHangarScene({
       sceneApiRef.current = null;
       if (flow) flow.dispose();
       if (supply) supply.dispose();
+      endTimelapse(false);
+      dayNight.dispose();
       racks.forEach((g) => {
         setRackOpacity(g, 1);
         disposeFadeClones(g);

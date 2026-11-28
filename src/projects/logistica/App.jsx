@@ -15,6 +15,7 @@ import { demoAreas } from "./data/demoAreas.js";
 import { samplePath } from "./scene/buildDrawn.js";
 import HallSizeCard from "./components/HallSizeCard.jsx";
 import TopBar from "./components/TopBar.jsx";
+import { DAY_MODES } from "./scene/dayNight.js";
 import ScenePanel from "./components/ScenePanel.jsx";
 import KanbanModal from "./components/KanbanModal.jsx";
 import KpiCards from "./components/KpiCards.jsx";
@@ -71,6 +72,12 @@ export default function Logistica() {
   // Estação pronta escolhida na ferramenta de área: { type, aircraft, angle } (null = desenhar livre).
   const [areaPreset, setAreaPreset] = useState({ type: "fuselage", aircraft: "kc390", angle: 0 });
   const presetRef = useRef(null);
+  // Dia e noite (dia, noite ou ciclo) e timelapse da montagem de uma estação.
+  const [dayMode, setDayMode] = useState("day");
+  const dayModeRef = useRef("day");
+  dayModeRef.current = dayMode;
+  const timelapseRef = useRef(null);
+  const [timelapse, setTimelapse] = useState(null); // { id, progress }
   // GPS: a cena lê rota/posição/caminhada daqui a cada quadro.
   const navRef = useRef({});
   const term = query.trim().toLocaleLowerCase();
@@ -248,6 +255,8 @@ export default function Logistica() {
       navRef,
       selectedRef,
       presetRef,
+      dayModeRef,
+      timelapseRef,
     },
     setters: {
       setLayout,
@@ -590,6 +599,29 @@ export default function Logistica() {
     snapRef.current = !snapRef.current;
     setSnapToGrid(snapRef.current);
   };
+  // Timelapse: a câmera vai até a estação e a peça é montada de 0 a 100% em alguns segundos.
+  const stopTimelapse = () => {
+    timelapseRef.current = null;
+    setTimelapse(null);
+  };
+  const startTimelapse = (id) => {
+    const area = layout.areas.find((a) => a.id === id);
+    if (!area) return;
+    const r = orientedRect(area.points);
+    focusRef.current(r.cx, r.cz, Math.max(16, r.length * 1.3), 0.63);
+    const request = {
+      id,
+      ms: 14000,
+      onTick: (progress) => setTimelapse((t) => (t && t.id === id ? { id, progress } : t)),
+      onDone: () => {
+        if (timelapseRef.current === request) timelapseRef.current = null;
+        setTimelapse((t) => (t && t.id === id ? null : t));
+      },
+    };
+    timelapseRef.current = request;
+    setTimelapse({ id, progress: 0 });
+    setNotice("Timelapse da montagem · " + (area.name || area.id));
+  };
   const toggleLayer = (name, setter, value) => {
     if (layerRefs.current[name]) layerRefs.current[name].visible = !value;
     setter(!value);
@@ -641,6 +673,8 @@ export default function Logistica() {
         showStructure={showStructure}
         onToggleGrid={() => toggleLayer("grid", setShowGrid, showGrid)}
         onToggleStructure={() => toggleLayer("structure", setShowStructure, showStructure)}
+        dayMode={dayMode}
+        onCycleDayMode={() => setDayMode((m) => DAY_MODES[(DAY_MODES.indexOf(m) + 1) % DAY_MODES.length])}
         onAddKanban={addKanban}
         onOpenInventory={() => setInventoryOpen(true)}
         onOpenHall={() => {
@@ -684,6 +718,9 @@ export default function Logistica() {
           onRotateArea={rotateAreaBy}
           onFitArea={fitArea}
           onRouteToArea={(id) => openNav(id)}
+          timelapse={timelapse}
+          onTimelapse={startTimelapse}
+          onStopTimelapse={stopTimelapse}
           onRemove={removeSelected}
         />
         <TrackCard layout={layout} selected={selected} selectedSlotId={selectedSlotId} onOpenKanban={openKanban} />
